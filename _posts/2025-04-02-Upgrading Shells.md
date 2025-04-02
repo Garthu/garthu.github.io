@@ -1,16 +1,8 @@
 ---
-tags:
-  - comandos
-  - linux
-  - utilitário
-  - shell
-  - tty
-  - bash
+title: Upgrading Shells
+categories: [Tutorial]
+tags: [comandos, linux, utilitário, shell, tty, bash]
 date: 2025-03-30T14:32:00
-author: Samuel Cardoso
-cssclasses:
-  - center-images
-  - center-titles
 ---
 
 # 🖥️ Programas com Shells comuns**
