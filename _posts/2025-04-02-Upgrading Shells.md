@@ -2,10 +2,11 @@
 title: Upgrading Shells
 categories: [Tutorial]
 tags: [comandos, linux, utilitário, shell, tty, bash]
-date: 2025-03-30T14:32:00
+date: 2025-03-30T14:32:00r
+render_with_liquid: false
 ---
 
-# 🖥️ Programas com Shells comuns**
+# 🖥️ ** Programas com Shells comuns **
 
 > 📌 **Descrição:**  
 > Quando pegamos uma Reverse Shell simples, nem todos os recursos ficam liberados e disponíveis. Isto faz com que os demais processos relacionados ao Pentest demorem mais. Alguns dos recursos limitados são:
