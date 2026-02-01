@@ -200,7 +200,8 @@ exclude:
   - "*.gem"
   - "*.gemspec"
   - docs
-  - tools
+  - scripts
+  - bin
   - README.md
   - LICENSE
   - rollup.config.js
