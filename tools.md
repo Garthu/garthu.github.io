@@ -1,6 +1,5 @@
 ---
 title: Tools
 permalink: /tools/
+redirect_to: /tools/pentestbench/
 ---
-
-- [PentestBench]({{ "/tools/pentestbench/" | relative_url }})
