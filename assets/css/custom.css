@@ -604,3 +604,55 @@ a.post-preview:hover .card-body,
 a.post-preview:hover .card {
   box-shadow: 0 14px 28px rgba(0,0,0,.28) !important;
 }
+
+/* =========================
+   REMOVE: licença (CC) + "Feito com Jekyll..."
+   E corrige fundo do rodapé/tail
+   ========================= */
+
+/* 1) some com o bloco de licença */
+.license-wrapper,
+div.license-wrapper {
+  display: none !important;
+}
+
+/* 3) garante que o footer e a área final não ficam com “outra cor” */
+#post-tail-wrapper,
+.post-tail-wrapper,
+#tail-wrapper,
+#footer-wrapper,
+#footer,
+footer,
+.site-footer,
+.site-info {
+  background: transparent !important;
+  border-top-color: rgba(255,255,255,.06) !important;
+}
+
+/* 4) em alguns layouts o fundo diferente vem do panel do rodapé */
+#post-tail-wrapper .card,
+.post-tail-wrapper .card,
+#post-tail-wrapper .card .card-body,
+.post-tail-wrapper .card .card-body {
+  background: transparent !important;
+  border-color: rgba(255,255,255,.07) !important;
+  box-shadow: none !important;
+}
+
+/* FOOTER: remove qualquer "Feito com Jekyll" e link do tema Chirpy em qualquer lugar */
+footer p:has(a[href*="jekyllrb.com"]),
+footer p:has(a[href*="jekyll-theme-chirpy"]),
+footer p:has(a[href*="cotes2020/jekyll-theme-chirpy"]),
+#footer p:has(a[href*="jekyllrb.com"]),
+#footer-wrapper p:has(a[href*="jekyllrb.com"]),
+#footer p:has(a[href*="jekyll-theme-chirpy"]),
+#footer-wrapper p:has(a[href*="jekyll-theme-chirpy"]) {
+  display: none !important;
+}
+
+/* garante que não sobra “faixa” vazia */
+footer .site-info,
+#footer .site-info,
+#footer-wrapper .site-info {
+  background: transparent !important;
+}

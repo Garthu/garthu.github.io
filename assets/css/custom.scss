@@ -555,3 +555,45 @@ body{
 #sidebar ul.nav > li::marker{
   content: "" !important;
 }
+
+/* =========================
+   REMOVE: licença (CC) + "Feito com Jekyll..."
+   E corrige fundo do rodapé/tail
+   ========================= */
+
+/* 1) some com o bloco de licença */
+.license-wrapper,
+div.license-wrapper {
+  display: none !important;
+}
+
+/* 2) some com o "Feito com Jekyll usando o tema Chirpy"
+   (no Chirpy isso cai no footer .site-info e normalmente é o último <p>) */
+#footer .site-info p:last-child,
+#footer-wrapper .site-info p:last-child,
+footer .site-info p:last-child {
+  display: none !important;
+}
+
+/* 3) garante que o footer e a área final não ficam com “outra cor” */
+#post-tail-wrapper,
+.post-tail-wrapper,
+#tail-wrapper,
+#footer-wrapper,
+#footer,
+footer,
+.site-footer,
+.site-info {
+  background: transparent !important;
+  border-top-color: rgba(255,255,255,.06) !important;
+}
+
+/* 4) em alguns layouts o fundo diferente vem do panel do rodapé */
+#post-tail-wrapper .card,
+.post-tail-wrapper .card,
+#post-tail-wrapper .card .card-body,
+.post-tail-wrapper .card .card-body {
+  background: transparent !important;
+  border-color: rgba(255,255,255,.07) !important;
+  box-shadow: none !important;
+}
