@@ -1,0 +1,606 @@
+:root{
+  --term-green:#00ff88;
+  --term-magenta:#ff00ff;
+  --term-cyan:#00ffff;
+  --term-yellow:#ffff00;
+  --term-blue:#0088ff;
+
+  --g-bg:#1d2021;
+  --g-panel:#282828;
+  --g-panel2:#1d2021;
+  --g-border:#504945;
+
+  --g-fg:#e6e8eb;
+  --g-muted:#b6bcc6;
+
+  --g-purple:#b16286;
+  --g-green:#8ec07c;
+  --g-cyan:#83a598;
+  --g-yellow:#fabd2f;
+  --g-red:#fb4934;
+}
+
+
+html,body{
+  background:var(--g-bg) !important;
+  color:var(--g-fg) !important;
+}
+
+a{ color:var(--g-cyan) !important; }
+a:hover{ color:var(--g-yellow) !important; text-decoration:underline !important; }
+
+.card,.post-preview{
+  background:var(--g-panel) !important;
+  border:1px solid var(--g-border) !important;
+  box-shadow:none !important;
+  border-radius:14px !important;
+}
+
+.post-preview{
+  padding:18px 18px 14px 18px !important;
+}
+
+.post-preview:hover{
+  border-color:rgba(255,255,255,.10) !important;
+  background: linear-gradient(145deg, #282828, #32302f) !important;
+}
+
+#sidebar{
+  background:var(--g-panel2) !important;
+  border-right:1px solid rgba(255,255,255,.06) !important;
+}
+
+#sidebar .profile-wrapper{
+  border-bottom:1px solid rgba(255,255,255,.06) !important;
+}
+
+#sidebar .profile-wrapper #avatar{
+  width:62px !important;
+  height:62px !important;
+  border-radius:12px !important;
+  overflow:hidden !important;
+  border:1px solid rgba(255,255,255,.10) !important;
+  box-shadow:none !important;
+}
+#sidebar .profile-wrapper #avatar img{
+  width:100% !important;
+  height:100% !important;
+  object-fit:cover !important;
+}
+
+#sidebar ul li.nav-item a.nav-link i{ display:none !important; }
+
+#sidebar ul li.nav-item a.nav-link{
+  background:transparent !important;
+  border:0 !important;
+  border-radius:0 !important;
+  padding-left:44px !important;
+  color:var(--g-cyan) !important;
+  position:relative !important;
+}
+
+#sidebar ul li.nav-item a.nav-link::before{
+  content:"$" !important;
+  position:absolute !important;
+  left:18px !important;
+  top:50% !important;
+  transform:translateY(-50%) !important;
+  color:var(--term-cyan) !important;
+  opacity:.85 !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
+}
+
+#sidebar ul li.nav-item.active .nav-link{ color:var(--g-green) !important; }
+#sidebar ul li.nav-item.active .nav-link::before{ color:var(--g-green) !important; }
+
+#sidebar .sidebar-bottom{
+  border-top:1px solid rgba(255,255,255,.06) !important;
+  background:transparent !important;
+  display:flex !important;
+  justify-content:center !important;
+  align-items:center !important;
+  gap:20px !important;
+  padding:12px 0 !important;
+}
+
+#sidebar .sidebar-bottom a{
+  opacity:.78 !important;
+  width:34px !important;
+  height:34px !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  border-radius:10px !important;
+}
+
+#sidebar .sidebar-bottom{
+  margin-bottom:15px !important;
+}
+
+/* =========================
+   SIDEBAR: completar visual sem mexer no grid
+   ========================= */
+
+/* Profile centralizado sem alterar estrutura do sidebar */
+#sidebar .profile-wrapper{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:center !important;
+  text-align:center !important;
+  padding:18px 12px 14px !important;
+  gap:6px !important;
+}
+
+/* Title + prompt em linha separada, sem deslocar nada */
+#sidebar .site-title{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:center !important;
+  text-align:center !important;
+  line-height:1.2 !important;
+  margin-top:6px !important;
+  font-weight:800 !important;
+}
+
+/* remove qualquer “herança torta” */
+#sidebar .site-title,
+#sidebar .site-subtitle{
+  margin-left:0 !important;
+}
+
+/* prompt abaixo do título */
+#sidebar .site-title::after{
+  content:"garthu@kali:~$" !important;
+  display:block !important;
+  margin:4px 0 0 0 !important;
+  font-size:.75rem !important;
+  font-weight:600 !important;
+  color:var(--term-yellow) !important;
+  letter-spacing:.2px !important;
+}
+
+/* subtítulo menor */
+#sidebar .site-subtitle{
+  color:var(--g-muted) !important;
+  font-style:italic !important;
+  margin-top:2px !important;
+  font-size:.85rem !important;
+  opacity:.85 !important;
+}
+
+/* garantir que bullets não apareçam em builds diferentes */
+#sidebar ul.nav{
+  list-style:none !important;
+  padding-left:0 !important;
+  margin:0 !important;
+}
+#sidebar ul.nav > li{
+  list-style:none !important;
+}
+#sidebar ul.nav > li::marker{
+  content:"" !important;
+}
+
+/* Rodapé social com margem fixa do fim, sem transformar sidebar em flex */
+#sidebar .sidebar-bottom{
+  border-top:1px solid rgba(255,255,255,.06) !important;
+  background:transparent !important;
+  display:flex !important;
+  justify-content:center !important;
+  align-items:center !important;
+  gap:20px !important;
+  padding:12px 0 10px !important;
+  margin-bottom:15px !important;
+}
+
+/* Se o tema estiver empurrando o bottom pra cima por margem do nav */
+#sidebar ul.nav{
+  margin-bottom:12px !important;
+}
+
+/* =========================
+   TOPBAR + SEARCH (seguro)
+   ========================= */
+
+#topbar{
+  background:var(--g-panel2) !important;
+  border-bottom:1px solid var(--g-border) !important;
+}
+
+/* wrapper do input */
+#search-wrapper{
+  border:1px solid var(--g-border) !important;
+  background:var(--g-panel) !important;
+}
+
+/* input em si */
+#search-input{
+  color:var(--g-fg) !important;
+}
+#search-input::placeholder{
+  color:var(--g-muted) !important;
+}
+/* =========================
+   CODEBLOCKS - Ubuntu-ish (seguro)
+   ========================= */
+
+div.highlighter-rouge,
+figure.highlight{
+  margin:1rem 0 !important;
+  border-radius:14px !important;
+  overflow:hidden !important;
+  border:1px solid #3C3836 !important;
+  box-shadow:0 6px 16px rgba(0,0,0,.35) !important;
+  background:var(--g-panel) !important;
+}
+
+/* header do chirpy */
+.code-header{
+  background:#3C3836 !important;
+  height:34px !important;
+  border-bottom:1px solid var(--g-border) !important;
+  padding:0 0 0 52px !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:space-between !important;
+  position:relative !important;
+  color:var(--g-muted) !important;
+}
+
+.code-header::before{
+  content:"" !important;
+  position:absolute !important;
+  top:12px !important;
+  left:14px !important;
+  width:10px !important;
+  height:10px !important;
+  border-radius:999px !important;
+  background:var(--g-red) !important;
+  box-shadow:14px 0 0 0 var(--g-yellow), 28px 0 0 0 var(--g-green) !important;
+  opacity:.95 !important;
+  pointer-events:none !important;
+}
+
+.code-header span,
+.code-header .code-lang{
+  color:var(--g-green) !important;
+  font-size:.78rem !important;
+  font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
+  margin:0 !important;
+  flex:1 !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  pointer-events:none !important;
+  text-align:center !important;
+}
+
+/* botão copiar */
+.code-header .buttons{
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:8px !important;
+  flex:0 0 auto !important;
+}
+.code-header button{
+  color:rgba(180,185,210,.7) !important;
+  background:transparent !important;
+  border:none !important;
+  cursor:pointer !important;
+  padding:4px !important;
+  font-size:.9rem !important;
+}
+.code-header button:hover{
+  color:var(--g-green) !important;
+}
+
+/* conteúdo */
+.highlight,
+.highlight pre,
+.highlight pre code{
+  background:var(--g-panel) !important;
+  color:var(--g-fg) !important;
+}
+
+.highlight pre{
+  margin:0 !important;
+  padding:10px 12px !important;
+  font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
+  font-size:.9rem !important;
+  line-height:1.45 !important;
+}
+
+/* =========================
+   CODEBLOCKS: remover números de linha (Rouge / Chirpy)
+   ========================= */
+
+/* Remove a coluna de números */
+.highlight .rouge-gutter{
+  display:none !important;
+}
+
+/* Garante que a área do código ocupe tudo */
+.highlight .rouge-code{
+  width:100% !important;
+}
+
+/* Remove qualquer padding residual da tabela */
+.highlight table{
+  margin:0 !important;
+}
+.highlight td{
+  padding:0 !important;
+}
+
+/* Fallback extra (alguns modos do Rouge) */
+pre.lineno,
+.lineno{
+  display:none !important;
+}
+
+/* =========================
+   CODEBLOCKS: respiro interno do código
+   ========================= */
+
+/* Padding interno real do código */
+.highlight pre{
+  padding: 19px 7px 7px 21px !important;
+}
+
+/* =========================
+   ROUGE SYNTAX HIGHLIGHTING (Gruvbox Dark)
+   ========================= */
+
+.highlight .c { color: #928374; font-style: italic; } /* Comment */
+.highlight .k { color: #fb4934; } /* Keyword */
+.highlight .o { color: #fe8019; } /* Operator */
+.highlight .cm { color: #928374; font-style: italic; }
+.highlight .cp { color: #928374; }
+.highlight .c1 { color: #928374; font-style: italic; }
+.highlight .cs { color: #928374; }
+
+.highlight .gd { color: #fb4934; } /* Deleted */
+.highlight .ge { font-style: italic; }
+.highlight .gr { color: #fb4934; }
+.highlight .gh { color: #83a598; }
+.highlight .gi { color: #b8bb26; } /* Inserted */
+.highlight .go { color: #928374; }
+.highlight .gp { color: #928374; }
+.highlight .gs { font-weight: bold; }
+.highlight .gu { color: #83a598; }
+
+.highlight .kc { color: #fb4934; }
+.highlight .kd { color: #fb4934; }
+.highlight .kn { color: #fb4934; }
+.highlight .kp { color: #fb4934; }
+.highlight .kr { color: #fb4934; }
+.highlight .kt { color: #fabd2f; } /* Type */
+
+.highlight .m { color: #d3869b; } /* Number */
+.highlight .mf { color: #d3869b; }
+.highlight .mh { color: #d3869b; }
+.highlight .mi { color: #d3869b; }
+.highlight .mo { color: #d3869b; }
+
+.highlight .s { color: #b8bb26; } /* String */
+.highlight .sb { color: #b8bb26; }
+.highlight .sc { color: #b8bb26; }
+.highlight .sd { color: #b8bb26; }
+.highlight .s2 { color: #b8bb26; }
+.highlight .se { color: #fe8019; }
+.highlight .sh { color: #b8bb26; }
+.highlight .si { color: #b8bb26; }
+.highlight .sx { color: #b8bb26; }
+.highlight .sr { color: #b8bb26; }
+.highlight .s1 { color: #b8bb26; }
+.highlight .ss { color: #b8bb26; }
+
+.highlight .na { color: #83a598; } /* Attribute */
+.highlight .nb { color: #fabd2f; }
+.highlight .nc { color: #8ec07c; } /* Class */
+.highlight .no { color: #fabd2f; }
+.highlight .nd { color: #83a598; }
+.highlight .ni { color: #fabd2f; }
+.highlight .ne { color: #fb4934; }
+.highlight .nf { color: #8ec07c; } /* Function */
+.highlight .nl { color: #fabd2f; }
+.highlight .nn { color: #8ec07c; }
+.highlight .nt { color: #fb4934; } /* HTML tag */
+.highlight .nv { color: #fabd2f; }
+
+.highlight .w { color: #ebdbb2; } /* Whitespace */
+
+/* =========================
+   CONSOLE / TERMINAL (quando o Rouge não tokeniza bem)
+   ========================= */
+
+/* Base: um pouco mais claro e legível */
+.highlight.language-console pre,
+.highlight.language-terminal pre,
+.highlight.language-shell-session pre {
+  color: #ebdbb2 !important; /* base claro */
+}
+
+/* Se o Rouge tokenizar alguma coisa, melhora */
+.highlight.language-console .gp,
+.highlight.language-terminal .gp,
+.highlight.language-shell-session .gp {
+  color: #8ec07c !important; /* prompt */
+  font-weight: 600 !important;
+}
+
+.highlight.language-console .go,
+.highlight.language-terminal .go,
+.highlight.language-shell-session .go {
+  color: #bdae93 !important; /* output */
+}
+
+/* Variáveis e tokens comuns que às vezes aparecem como .nv */
+.highlight.language-console .nv,
+.highlight.language-terminal .nv,
+.highlight.language-shell-session .nv {
+  color: #fabd2f !important;
+}
+
+/* Números (portas, PIDs etc.) */
+.highlight.language-console .m,
+.highlight.language-terminal .m,
+.highlight.language-shell-session .m {
+  color: #d3869b !important;
+}
+
+/* Strings */
+.highlight.language-console .s,
+.highlight.language-terminal .s,
+.highlight.language-shell-session .s {
+  color: #b8bb26 !important;
+}
+
+/* =========================
+   POWERSHELL
+   ========================= */
+
+.highlight.language-powershell pre,
+.highlight.language-pwsh pre {
+  color: #ebdbb2 !important;
+}
+
+/* Comentários */
+.highlight.language-powershell .c,
+.highlight.language-powershell .c1,
+.highlight.language-pwsh .c,
+.highlight.language-pwsh .c1 {
+  color: #928374 !important;
+  font-style: italic !important;
+}
+
+/* Strings */
+.highlight.language-powershell .s,
+.highlight.language-powershell .s1,
+.highlight.language-powershell .s2,
+.highlight.language-pwsh .s,
+.highlight.language-pwsh .s1,
+.highlight.language-pwsh .s2 {
+  color: #b8bb26 !important;
+}
+
+/* Variáveis ($var) */
+.highlight.language-powershell .nv,
+.highlight.language-pwsh .nv {
+  color: #fabd2f !important;
+}
+
+/* Cmdlets e funções */
+.highlight.language-powershell .nb,
+.highlight.language-powershell .nf,
+.highlight.language-pwsh .nb,
+.highlight.language-pwsh .nf {
+  color: #8ec07c !important;
+  font-weight: 600 !important;
+}
+
+/* Operadores, pipes */
+.highlight.language-powershell .o,
+.highlight.language-pwsh .o {
+  color: #fe8019 !important;
+}
+
+/* Números */
+.highlight.language-powershell .m,
+.highlight.language-pwsh .m {
+  color: #d3869b !important;
+}
+
+/* =========================
+   CMD / BAT
+   ========================= */
+
+.highlight.language-bat pre,
+.highlight.language-batch pre,
+.highlight.language-cmd pre {
+  color: #ebdbb2 !important;
+}
+
+/* Comentários (REM / ::) costumam cair como comentário */
+.highlight.language-bat .c,
+.highlight.language-bat .c1,
+.highlight.language-batch .c,
+.highlight.language-batch .c1,
+.highlight.language-cmd .c,
+.highlight.language-cmd .c1 {
+  color: #928374 !important;
+  font-style: italic !important;
+}
+
+/* Variáveis %VAR% (muitas vezes cai como .nv ou .na dependendo do lexer) */
+.highlight.language-bat .nv,
+.highlight.language-bat .na,
+.highlight.language-batch .nv,
+.highlight.language-batch .na,
+.highlight.language-cmd .nv,
+.highlight.language-cmd .na {
+  color: #fabd2f !important;
+  font-weight: 600 !important;
+}
+
+/* Palavras-chave típicas (set, if, for) às vezes viram keyword */
+.highlight.language-bat .k,
+.highlight.language-batch .k,
+.highlight.language-cmd .k {
+  color: #fb4934 !important;
+  font-weight: 600 !important;
+}
+
+/* Strings */
+.highlight.language-bat .s,
+.highlight.language-bat .s1,
+.highlight.language-bat .s2,
+.highlight.language-batch .s,
+.highlight.language-batch .s1,
+.highlight.language-batch .s2,
+.highlight.language-cmd .s,
+.highlight.language-cmd .s1,
+.highlight.language-cmd .s2 {
+  color: #b8bb26 !important;
+}
+
+/* Labels :label costumam cair como name/class em alguns lexers */
+.highlight.language-bat .nl,
+.highlight.language-batch .nl,
+.highlight.language-cmd .nl {
+  color: #83a598 !important;
+  font-weight: 600 !important;
+}
+/* =========================
+   FIX: sombra/overlay deslocado no hover do post list (Chirpy)
+   Culpado: a.post-preview::before
+   ========================= */
+
+a.post-preview {
+  position: relative !important;
+  overflow: visible !important;
+}
+
+/* mata o overlay/sombra falsa */
+a.post-preview::before,
+a.post-preview::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* garante que não tem “lift” por transform no hover */
+a.post-preview:hover {
+  transform: none !important;
+}
+
+/* sombra só no card interno */
+a.post-preview .card-body,
+a.post-preview .card {
+  box-shadow: 0 10px 22px rgba(0,0,0,.22) !important;
+  border-radius: 14px !important;
+}
+
+a.post-preview:hover .card-body,
+a.post-preview:hover .card {
+  box-shadow: 0 14px 28px rgba(0,0,0,.28) !important;
+}

@@ -87,10 +87,10 @@ reset
 
 por final, fazendo o STTY que voltou com o `fg` equivaler ao STTY do Kali
 
-```bash
-export SHELL=bash
-export TERM=xterm256-color
-stty rows 38 columns 116
+```console
+$ export SHELL=bash
+$ export TERM=xterm256-color
+$ stty rows 38 columns 116
 ```
 
 Em resumo:

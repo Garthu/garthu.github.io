@@ -1,0 +1,557 @@
+---
+---
+
+:root{
+  /* Mantenha essas cores do terminal neon */
+  --term-green: #00ff88;
+  --term-magenta: #ff00ff;
+  --term-cyan: #00ffff;
+  --term-yellow: #ffff00;
+  --term-blue: #0088ff;
+
+  /* ATUALIZE para tons do Gruvbox */
+  --g-bg: #1d2021;           /* Um pouco mais claro que #282828 */
+  --g-panel: #282828;        /* Igual ao fundo do codeblock */
+  --g-panel2: #1d2021;       /* Para a sidebar */
+  --g-border: #504945;       /* Cor da borda do codeblock */
+
+  --g-fg: #e6e8eb;          /* Texto principal (cor do código) */
+  --g-muted: #b6bcc6;       /* Texto secundário */
+
+  /* Harmonizar as cores de acento com Gruvbox */
+  --g-purple: #b16286;      /* Roxo Gruvbox */
+  --g-green: #8ec07c;       /* Verde Gruvbox (igual ao label) */
+  --g-cyan: #83a598;        /* Ciano Gruvbox */
+  --g-yellow: #fabd2f;      /* Amarelo Gruvbox (igual bolinha 2) */
+  --g-red: #fb4934;         /* Vermelho Gruvbox (igual bolinha 1) */
+}
+
+/* =========================
+   Base
+   ========================= */
+html,body{
+  background:var(--g-bg) !important;
+  color:var(--g-fg) !important;
+}
+
+body{
+  min-height:100vh !important;
+  overflow-x:hidden !important;
+}
+
+/* Layout do Chirpy funcionando */
+#main-wrapper{
+  justify-content:flex-start !important;
+  background:transparent !important;
+}
+
+#core-wrapper{
+  background:transparent !important;
+  border:none !important;
+  box-shadow:none !important;
+}
+#core-wrapper::before{ display:none !important; }
+
+/* Links discretos */
+a{
+  color:#83a598 !important;
+  text-decoration: #d3869b !important;
+}
+a:hover{
+  color: #fabd2 !important;
+  text-decoration:underline !important;
+  text-decoration-color:rgba(187,154,247,.55) !important;
+}
+
+/* Títulos */
+#post-wrapper h1,#post-wrapper h2,#post-wrapper h3,
+.post-preview .post-title{
+  color:#ebdbb2 !important;
+}
+
+.post-meta,.post-meta *{
+  color:#a89984 !important;
+}
+
+/* Cards */
+.card,.post-preview{
+  background:#282828 !important;
+  border:1px solid #504945 !important;
+  box-shadow:none !important;
+  border-radius:14px !important;
+}
+.post-preview{
+  padding:18px 18px 14px 18px !important;
+}
+.post-preview:hover{
+  border-color:rgba(255,255,255,.10) !important;
+  background: linear-gradient(145deg, #282828, #32302f) !important;
+}
+.post-preview .post-excerpt{
+  color:#bdae93 !important;
+}
+
+/* =========================
+   Sidebar: terminal
+   ========================= */
+#sidebar {
+  background:var(--g-panel2) !important;
+  border-right:1px solid rgba(255,255,255,.06) !important;
+}
+
+/* Centralizar corretamente avatar + textos */
+#sidebar .profile-wrapper {
+  border-bottom:1px solid rgba(255,255,255,.06) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  text-align: center !important;
+  padding: 18px 12px 14px !important;
+  gap: 6px !important;
+}
+
+/* Avatar menor e sem "círculo duplo" */
+#sidebar .profile-wrapper #avatar{
+  width:62px !important;
+  height:62px !important;
+  border-radius:12px !important;
+  overflow:hidden !important;
+  background:transparent !important;
+  border:1px solid rgba(255,255,255,.10) !important;
+  box-shadow:none !important;
+}
+#sidebar .profile-wrapper #avatar img{
+  width:100% !important;
+  height:100% !important;
+  object-fit:cover !important;
+  border-radius:0 !important;
+  padding:0 !important;
+}
+
+/* Não quebrar Font Awesome */
+#sidebar i.fa,
+#sidebar i.fas,
+#sidebar i.far,
+#sidebar i.fab{
+  font-family:"Font Awesome 5 Free" !important;
+  font-weight:900 !important;
+  font-style:normal !important;
+}
+#sidebar i.fab{
+  font-family:"Font Awesome 5 Brands" !important;
+  font-weight:400 !important;
+}
+
+/* fonte mono só nos textos */
+/* Nota: content só deve existir em pseudo-elemento, então aqui fica só reset seguro */
+#sidebar .site-title,
+#sidebar .site-subtitle,
+#sidebar .nav-link span{
+  margin-left: 0 !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+}
+
+#sidebar .site-title{
+  color:rgba(245,246,255,.92) !important;
+  font-weight:800 !important;
+  font-size: 1.05rem !important;
+  line-height: 1.2 !important;
+  margin-top: 6px !important;
+}
+#sidebar .site-subtitle{
+  color:var(--g-muted) !important;
+  font-style:italic !important;
+  margin-top: 2px !important;
+  font-size: .85rem !important;
+  opacity: .85 !important;
+}
+
+/* prompt */
+/* Mantido, mas será ajustado no bloco final para ficar alinhado em linha separada */
+#sidebar .site-title::after{
+  content: "  garthu@kali:~$" !important;
+  margin-left: 10px !important;
+  font-size: .75rem !important;
+  font-weight: 500 !important;
+  color: var(--term-yellow) !important;
+}
+
+/* Menu sem ícones, só $ */
+#sidebar ul li.nav-item a.nav-link i{ display:none !important; }
+
+#sidebar ul li.nav-item a.nav-link{
+  background:transparent !important;
+  border:0 !important;
+  border-radius:0 !important;
+  padding-left:44px !important;
+  color:#83a598 !important;
+  position:relative !important;
+}
+
+#sidebar ul li.nav-item a.nav-link::before{
+  content:"$" !important;
+  position:absolute !important;
+  left:18px !important;
+  top:50% !important;
+  transform:translateY(-50%) !important;
+  color:var(--term-cyan) !important;
+  opacity:.85 !important;
+  font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace !important;
+}
+
+#sidebar ul li.nav-item a.nav-link:hover{
+  color:rgba(240,242,255,.92) !important;
+}
+
+#sidebar ul li.nav-item.active .nav-link{
+  color: #8ec07c !important;
+}
+#sidebar ul li.nav-item.active .nav-link::before{
+  color: #8ec07c !important;
+}
+
+/* Social bottom */
+/* Mantido, mas o alinhamento final correto entra no bloco de overrides no fim.
+   Aqui foi corrigido o erro de sintaxe (margin-bottom) para não invalidar a regra. */
+#sidebar .sidebar-bottom{
+  border-top:1px solid rgba(255,255,255,.06) !important;
+  background:transparent !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 20px !important;
+  margin-top: auto !important;
+  margin-bottom: 0 !important; /* estava inválido */
+  padding-top: 8px !important;
+  padding-bottom: 10px !important;
+}
+#sidebar .sidebar-bottom a{
+  background:transparent !important;
+  border:0 !important;
+  opacity:.78 !important;
+  width:34px !important;
+  height:34px !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  border-radius:10px !important;
+}
+#sidebar .sidebar-bottom a:hover{
+  opacity:1 !important;
+  background:rgba(255,255,255,.05) !important;
+  outline:1px solid rgba(255,255,255,.10) !important;
+}
+#sidebar .sidebar-bottom a i{
+  font-size:18px !important;
+  line-height:1 !important;
+}
+
+/* =========================
+   Topbar
+   ========================= */
+#topbar-wrapper{ background:transparent !important; }
+
+#topbar{
+  background: #1d2021 !important; /* Um tom mais escuro */
+  border-bottom: 1px solid #504945 !important;
+}
+
+#search-wrapper{
+  border: 1px solid #504945 !important;
+  background: #282828 !important;
+}
+
+#search-input{
+  color: #ebdbb2 !important;
+}
+#search-input::placeholder{
+  color: #a89984 !important;
+}
+
+/* =========================
+   CODEBLOCKS - SOLUÇÃO MINIMALISTA
+   ========================= */
+
+/* Container principal (mantém o estilo Ubuntu) */
+div.highlighter-rouge,
+figure.highlight {
+  margin: 1rem 0 !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  border: 1px solid #3C3836 !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4) !important;
+  background: #282828 !important;
+}
+
+/* Header (mantém as bolinhas) */
+.code-header {
+  background: #3C3836 !important;
+  height: 34px !important;
+  border-bottom: 1px solid #504945 !important;
+  padding: 0 0px 0 52px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  position: relative !important;
+  color: #a89984 !important;
+}
+
+.code-header::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 12px !important;
+  left: 14px !important;
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 999px !important;
+  background: #FB4934 !important;
+  box-shadow: 14px 0 0 0 #FABD2F, 28px 0 0 0 #B8BB26 !important;
+  opacity: .95 !important;
+  pointer-events: none !important;
+}
+
+.code-header span,
+.code-header .code-lang {
+  color: #8EC07C !important;
+  font-size: .78rem !important;
+  font-family: "JetBrains Mono", monospace !important;
+  margin: 0 !important;
+  flex: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: none !important;
+  text-align: center !important;
+}
+
+/* Botão de copiar */
+.code-header .buttons {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex: 0 0 auto !important;
+}
+
+.code-header button {
+  color: rgba(180, 185, 210, .7) !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  padding: 4px !important;
+  font-size: .9rem !important;
+}
+
+.code-header button:hover {
+  color: #8ec07c !important;
+}
+
+/* =========================
+   ÚNICA ALTERAÇÃO NECESSÁRIA - Remove gutter sem efeitos colaterais
+   ========================= */
+
+/* Remove APENAS a coluna de números (gutter) */
+.highlight .rouge-table .rouge-gutter {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.highlight,
+.highlight .w {
+  background: #282828 !important;
+}
+
+/* Faz a célula do código ocupar 100% */
+.highlight .rouge-table .rouge-code {
+  width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.highlight pre {
+  margin: 0 !important;
+  padding: 8px 10px 0px 8px !important;
+  background: #282828 !important;
+  color: #EBDBB2 !important;
+  font-family: "JetBrains Mono", monospace !important;
+  font-size: .9rem !important;
+  line-height: 1.4 !important;
+}
+
+.highlight pre code {
+  background: #282828 !important;
+  color: #EBDBB2 !important;
+}
+
+/* Remove números de linha específicos */
+pre.lineno, .lineno {
+  display: none !important;
+}
+
+/* Remove qualquer espaço à esquerda residual */
+div.highlighter-rouge,
+figure.highlight {
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+}
+
+/* =========================
+   Ajustes de layout para rodapé da sidebar
+   Mantido e consolidado aqui, evitando conflitos
+   ========================= */
+
+/* Sidebar: garantir layout em coluna e controlar o rodapé */
+#sidebar {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100vh !important;
+}
+
+/* em algumas versões do Chirpy, o conteúdo fica dentro de um wrapper */
+#sidebar > * {
+  flex: 0 0 auto !important;
+}
+
+/* Remove o espaçamento excessivo acima do rodapé da sidebar */
+#sidebar ul.nav {
+  margin-bottom: 0 !important;
+}
+
+/* =========================
+   OVERRIDE FINAL: alinhamento reto do profile + prompt + bottom
+   Este bloco é o que deve "ganhar" no final do arquivo
+   ========================= */
+
+/* Faz o título comportar-se como bloco centralizado, e deixa o prompt em linha separada */
+#sidebar .site-title{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:center !important;
+  text-align:center !important;
+}
+
+#sidebar .site-title::after{
+  content:"garthu@kali:~$" !important;
+  display:block !important;
+  margin:4px 0 0 0 !important;
+  font-size:.75rem !important;
+  font-weight:600 !important;
+  color:var(--term-yellow) !important;
+  letter-spacing:.2px !important;
+}
+
+/* Rodapé com distância fixa do fim e linha mais colada nos ícones */
+#sidebar .sidebar-bottom{
+  margin-top: auto !important;
+  margin-bottom: 15px !important;
+  padding: 8px 0 6px !important;
+  border-top: 1px solid rgba(255,255,255,.06) !important;
+}
+
+/* =========================
+   FIX TEXTO AMARELADO NOS POSTS
+   ========================= */
+
+/* Texto normal */
+#post-wrapper,
+#post-wrapper p,
+#post-wrapper li,
+#post-wrapper ul,
+#post-wrapper ol,
+#post-wrapper span {
+  color: var(--g-fg) !important;
+}
+
+/* Negrito continua destaque */
+#post-wrapper strong {
+  color: var(--g-yellow) !important;
+  font-weight: 600 !important;
+}
+
+/* Itálico mais suave */
+#post-wrapper em {
+  color: var(--g-muted) !important;
+  font-style: italic !important;
+}
+
+#post-wrapper p strong {
+  color: var(--g-fg) !important;
+}
+
+/* =========================
+   FIX HOME: bolinhas e marcadores do post list
+   ========================= */
+
+/* O home do Chirpy lista posts em <ul id="post-list"> */
+#post-list {
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+}
+
+/* Remove bullets */
+#post-list > li {
+  list-style: none !important;
+}
+
+/* Alguns builds do Chirpy colocam marcadores/linhas via pseudo-elementos */
+#post-list > li::before,
+#post-list > li::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Garante que o card não “desloque” por estilos de lista */
+#post-list .post-preview {
+  margin-left: 0 !important;
+}
+
+/* =========================
+   FIX PRODUÇÃO: não quebrar o grid/colunas do Chirpy
+   ========================= */
+
+/* Não corte conteúdo horizontal. Isso pode “sumir” com o painel direito */
+body{
+  overflow-x: visible !important;
+}
+
+/* Não force alinhamento do wrapper principal */
+#main-wrapper{
+  justify-content: center !important;
+}
+
+/* Não mexa na estrutura do core wrapper */
+#core-wrapper::before{
+  display: block !important;
+}
+
+/* Garanta que o painel da direita exista em telas grandes */
+@media (min-width: 992px){
+  #panel-wrapper{
+    display: block !important;
+  }
+}
+
+/* =========================
+   FIX: bullets do menu da sidebar
+   ========================= */
+#sidebar ul.nav{
+  list-style: none !important;
+  padding-left: 0 !important;
+  margin: 0 !important;
+}
+
+#sidebar ul.nav > li{
+  list-style: none !important;
+}
+
+#sidebar ul.nav > li::marker{
+  content: "" !important;
+}
