@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+const { useState, useCallback, useMemo, useEffect, useRef } = window.React;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // OSCP+ AUTOPILOT v3 — Decision Engine for OSCP+ 2025/2026
@@ -813,7 +813,7 @@ const TABS=[
   {id:"notes",label:"Notes",icon:"📝"},
 ];
 
-export default function App(){
+function App(){
   const[tab,setTab]=useState("ad");
   const[targetIP,setTargetIP]=useState("");
   const[lhost,setLhost]=useState("");
@@ -844,3 +844,6 @@ export default function App(){
     </div>
   </>)
 }
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);

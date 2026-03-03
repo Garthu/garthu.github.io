@@ -174,6 +174,13 @@ permalink: /tools/
             <span class="tool-pill">Open tool</span>
           </div>
         </a>
+        <a class="tool-card" href="/tools/oscpautopilot/">
+          <div class="tool-card-inner">
+            <div class="tool-title">🚀 OSCP Autopilot</div>
+            <p class="tool-desc">Decision Engine e Checklist para certificação OSCP+. Totalmente executado no navegador.</p>
+            <span class="tool-pill">Open tool</span>
+          </div>
+        </a>
       </div>
     </div>
   </div>
