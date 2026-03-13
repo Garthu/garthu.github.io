@@ -135,4 +135,25 @@ permalink: /tools/
       <span class="tool-pill">Open tool →</span>
     </div>
   </a>
+  <a class="tool-card" href="/tools/osweautopilot/">
+    <div class="tool-card-inner">
+      <div class="tool-title">🕸️ OSWE Autopilot</div>
+      <p class="tool-desc">Decision Engine para OSWE (WEB-300). Auth Bypass, RCE (SQLi, SSTI, Insecure Deserialization) e Automação em Python.</p>
+      <span class="tool-pill">Open tool →</span>
+    </div>
+  </a>
+  <a class="tool-card" href="/tools/osepautopilot/">
+    <div class="tool-card-inner">
+      <div class="tool-title">🛡️ OSEP Autopilot</div>
+      <p class="tool-desc">Decision Engine para OSEP (PEN-300). AV/EDR Evasion, AMSI Bypass, Process Injection, AD Exploitation e Pivoting.</p>
+      <span class="tool-pill">Open tool →</span>
+    </div>
+  </a>
+  <a class="tool-card" href="/tools/osedautopilot/">
+    <div class="tool-card-inner">
+      <div class="tool-title">💥 OSED Autopilot</div>
+      <p class="tool-desc">Decision Engine para OSED (EXP-301). Stack/SEH Overflows, Egghunters, Custom Shellcode, ROP Chains e Format Strings.</p>
+      <span class="tool-pill">Open tool →</span>
+    </div>
+  </a>
 </div>
