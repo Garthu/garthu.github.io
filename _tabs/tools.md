@@ -11,177 +11,128 @@ permalink: /tools/
     --tb-acc2:#60a5fa;
   }
 
-  .tools-wrap{
-    max-width: 1100px;
-    margin: 22px auto 40px;
-    padding: 0 14px;
-  }
-
-  .tools-shell{
-    position: relative;
-    border-radius: 18px;
-    border: 1px solid rgba(255,255,255,.08);
-    background: rgba(0,0,0,.20);
-    box-shadow: 0 10px 34px rgba(0,0,0,.35);
-    overflow: hidden;
-    padding: 18px;
-  }
-
-  .tools-shell::before{
-    content:"";
-    position:absolute;
-    top: 12px;
-    bottom: 12px;
-    left: 12px;
-    width: 8px;
-    border-radius: 999px;
-    background: linear-gradient(180deg, var(--tb-acc1), var(--tb-acc2));
-    opacity: .95;
-  }
-
-  .tools-shell::after{
-    content:"";
-    position:absolute;
-    inset: 0;
-    background:
-      radial-gradient(900px 260px at 25% 0%, rgba(79,209,197,.18) 0%, transparent 60%),
-      radial-gradient(900px 260px at 75% 0%, rgba(96,165,250,.14) 0%, transparent 60%);
-    pointer-events:none;
-    opacity: .95;
-  }
-
-  .tools-inner{
-    position: relative;
-    z-index: 2;
-    padding-left: 18px;
-  }
-
-  .tools-title{
-    margin: 0 0 6px;
-    font-size: 22px;
-    font-weight: 900;
-    letter-spacing: .2px;
-    color: rgba(245,247,255,.95);
-  }
-
   .tools-sub{
-    margin: 0 0 14px;
-    opacity: .82;
+    margin: -4px 0 20px;
+    opacity: .72;
+    font-size: 15px;
     color: rgba(233,238,247,.85);
   }
 
   .tools-grid{
-    display:grid;
-    grid-template-columns: repeat(12, 1fr);
-    gap: 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
   }
 
   .tool-card{
-    grid-column: span 6;
     position: relative;
     overflow: hidden;
-    border-radius: 18px;
+    border-radius: 16px;
     border: 1px solid rgba(255,255,255,.10);
-    background: rgba(0,0,0,.18);
-    box-shadow: 0 10px 34px rgba(0,0,0,.28);
-    padding: 16px;
+    background: rgba(0,0,0,.20);
+    box-shadow: 0 8px 28px rgba(0,0,0,.30);
+    padding: 20px 20px 20px 36px;
     text-decoration: none;
     color: inherit;
-    transition: transform .12s ease, border-color .12s ease;
-    min-height: 124px;
+    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+    min-height: 130px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
   .tool-card:hover{
-    transform: translateY(-2px);
-    border-color: rgba(255,255,255,.16);
+    transform: translateY(-3px);
+    border-color: rgba(255,255,255,.18);
+    box-shadow: 0 12px 36px rgba(0,0,0,.40);
   }
 
   .tool-card::before{
     content:"";
-    position:absolute;
-    top: 12px;
-    bottom: 12px;
-    left: 12px;
-    width: 8px;
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: 14px;
+    width: 4px;
     border-radius: 999px;
     background: linear-gradient(180deg, var(--tb-acc1), var(--tb-acc2));
-    opacity: .95;
   }
 
   .tool-card::after{
     content:"";
-    position:absolute;
+    position: absolute;
     inset: 0;
     background:
-      radial-gradient(900px 260px at 25% 0%, rgba(79,209,197,.16) 0%, transparent 60%),
-      radial-gradient(900px 260px at 75% 0%, rgba(96,165,250,.12) 0%, transparent 60%);
-    pointer-events:none;
-    opacity: .95;
+      radial-gradient(600px 200px at 20% 0%, rgba(79,209,197,.12) 0%, transparent 60%),
+      radial-gradient(600px 200px at 80% 0%, rgba(96,165,250,.10) 0%, transparent 60%);
+    pointer-events: none;
   }
 
   .tool-card-inner{
     position: relative;
     z-index: 2;
-    padding-left: 18px;
   }
 
   .tool-title{
-    margin: 0 0 6px;
-    font-size: 16px;
-    font-weight: 950;
+    margin: 0 0 8px;
+    font-size: 17px;
+    font-weight: 800;
     letter-spacing: .2px;
     color: rgba(245,247,255,.95);
-    display:flex;
-    align-items:center;
-    gap: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .tool-desc{
     margin: 0;
-    opacity: .82;
+    opacity: .78;
+    font-size: 14px;
     color: rgba(233,238,247,.85);
-    line-height: 1.55;
+    line-height: 1.6;
   }
 
   .tool-pill{
-    display:inline-block;
-    margin-top: 10px;
-    padding: 6px 10px;
+    display: inline-block;
+    margin-top: 14px;
+    padding: 5px 12px;
     border-radius: 999px;
-    border: 1px solid rgba(255,255,255,.12);
-    background: rgba(0,0,0,.22);
+    border: 1px solid rgba(79,209,197,.25);
+    background: rgba(79,209,197,.08);
     font-size: 12px;
-    font-weight: 900;
-    opacity: .92;
+    font-weight: 700;
+    color: var(--tb-acc1);
+    transition: background .15s ease, border-color .15s ease;
   }
 
-  @media (max-width: 900px){
-    .tool-card{ grid-column: span 12; }
+  .tool-card:hover .tool-pill{
+    background: rgba(79,209,197,.14);
+    border-color: rgba(79,209,197,.40);
   }
 </style>
 
-<div class="tools-wrap">
-  <div class="tools-shell">
-    <div class="tools-inner">
-      <h1 class="tools-title">Tools</h1>
-      <p class="tools-sub">Utilitários rápidos para apoiar o fluxo de pentest e estudo.</p>
+<p class="tools-sub">Utilitários rápidos para apoiar o fluxo de pentest e estudo.</p>
 
-      <div class="tools-grid">
-        <a class="tool-card" href="/tools/pentestbench/">
-          <div class="tool-card-inner">
-            <div class="tool-title">🧪 PentestBench</div>
-            <p class="tool-desc">Gerador de comandos, cheatsheet e workspace local. Inputs com highlight e copy por comando.</p>
-            <span class="tool-pill">Open tool</span>
-          </div>
-        </a>
-        <a class="tool-card" href="/tools/oscpautopilot/">
-          <div class="tool-card-inner">
-            <div class="tool-title">🚀 OSCP Autopilot</div>
-            <p class="tool-desc">Decision Engine e Checklist para certificação OSCP+. Totalmente executado no navegador.</p>
-            <span class="tool-pill">Open tool</span>
-          </div>
-        </a>
-      </div>
+<div class="tools-grid">
+  <a class="tool-card" href="/tools/pentestbench/">
+    <div class="tool-card-inner">
+      <div class="tool-title">🧪 PentestBench</div>
+      <p class="tool-desc">Gerador de comandos, cheatsheet e workspace local. Inputs com highlight e copy por comando.</p>
+      <span class="tool-pill">Open tool →</span>
     </div>
-  </div>
+  </a>
+  <a class="tool-card" href="/tools/oscpautopilot/">
+    <div class="tool-card-inner">
+      <div class="tool-title">🚀 OSCP Autopilot</div>
+      <p class="tool-desc">Decision Engine e Checklist para certificação OSCP+. Totalmente executado no navegador.</p>
+      <span class="tool-pill">Open tool →</span>
+    </div>
+  </a>
+  <a class="tool-card" href="/tools/oswpautopilot/">
+    <div class="tool-card-inner">
+      <div class="tool-title">📡 OSWP Autopilot</div>
+      <p class="tool-desc">Decision Engine para certificação OSWP (PEN-210). WEP, WPA/WPA2, Evil Twin, WPS e mais.</p>
+      <span class="tool-pill">Open tool →</span>
+    </div>
+  </a>
 </div>
