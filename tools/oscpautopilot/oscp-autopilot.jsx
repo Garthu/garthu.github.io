@@ -209,6 +209,29 @@ const PORT_PLAYBOOKS = {
   ]},
 };
 
+// ─── CREDENTIAL-AWARE COMMANDS PER PORT ───
+const CRED_COMMANDS = {
+  21: (t,u,p) => `ftp ${t}\n# Login: ${u} / ${p}\n\n# Or one-liner:\ncurl ftp://${u}:${p}@${t}/`,
+  22: (t,u,p) => `ssh ${u}@${t}\n# Password: ${p}\n\n# Or with sshpass:\nsshpass -p '${p}' ssh ${u}@${t} -o StrictHostKeyChecking=no`,
+  25: (t,u,p) => `swaks --to admin@${t} --from ${u}@${t} --server ${t} --auth LOGIN --auth-user ${u} --auth-password '${p}'`,
+  80: (t,u,p) => `# Try creds on web login forms:\n# ${u} / ${p}\n\n# Hydra (adjust form params):\nhydra -l '${u}' -p '${p}' ${t} http-post-form "/login:user=^USER^&pass=^PASS^:F=failed"`,
+  110: (t,u,p) => `nc -nv ${t} 110\n# USER ${u}\n# PASS ${p}\n# LIST\n# RETR 1`,
+  135: (t,u,p) => `rpcclient -U '${u}%${p}' ${t}\nimpacket-rpcdump '${u}:${p}'@${t}`,
+  139: (t,u,p) => `smbclient -L //${t} -U '${u}%${p}'\nsmbmap -H ${t} -u '${u}' -p '${p}'\nnetexec smb ${t} -u '${u}' -p '${p}' --shares\nenum4linux-ng -A ${t} -u '${u}' -p '${p}'`,
+  143: (t,u,p) => `nc -nv ${t} 143\n# a LOGIN ${u} ${p}\n# a LIST "" "*"\n# a SELECT INBOX\n# a FETCH 1:* (BODY[HEADER.FIELDS (SUBJECT FROM)])`,
+  389: (t,u,p) => `ldapsearch -x -H ldap://${t} -D '${u}' -w '${p}' -b "DC=domain,DC=local" "(objectClass=user)" sAMAccountName memberOf description\n\n# Or with windapsearch:\npython3 windapsearch.py --dc-ip ${t} -u '${u}' -p '${p}' --users --groups`,
+  443: (t,u,p) => `# Try creds on HTTPS login forms:\n# ${u} / ${p}`,
+  445: (t,u,p) => `smbclient -L //${t} -U '${u}%${p}'\nsmbmap -H ${t} -u '${u}' -p '${p}'\nnetexec smb ${t} -u '${u}' -p '${p}' --shares\nnetexec smb ${t} -u '${u}' -p '${p}' --sam\nimpacket-psexec '${u}:${p}'@${t}\nimpacket-smbclient '${u}:${p}'@${t}`,
+  1433: (t,u,p) => `impacket-mssqlclient '${u}:${p}'@${t}\n\n# Or with sqsh:\nsqsh -S ${t} -U '${u}' -P '${p}'`,
+  3306: (t,u,p) => `mysql -h ${t} -u '${u}' -p'${p}'`,
+  3389: (t,u,p) => `xfreerdp /u:'${u}' /p:'${p}' /v:${t} /cert:ignore +clipboard /dynamic-resolution`,
+  5432: (t,u,p) => `psql -h ${t} -U '${u}'\n# Password: ${p}\n\n# Or:\nPGPASSWORD='${p}' psql -h ${t} -U '${u}'`,
+  5985: (t,u,p) => `evil-winrm -i ${t} -u '${u}' -p '${p}'`,
+  6379: (t,u,p) => `redis-cli -h ${t} -a '${p}'\nINFO\nKEYS *`,
+  8080: (t,u,p) => `# Try creds on web apps:\n# ${u} / ${p}\n\n# Tomcat manager:\ncurl -u '${u}:${p}' http://${t}:8080/manager/html`,
+  27017: (t,u,p) => `mongosh --host ${t} --port 27017 -u '${u}' -p '${p}' --authenticationDatabase admin`,
+};
+
 // ─── PRIV ESC DECISION TREES ───
 const PRIVESC = {
   linux: [
@@ -523,7 +546,42 @@ const CSS = `
 `;
 
 // ━━━ UTILITY FUNCTIONS ━━━
-function parsePorts(t){if(!t.trim())return[];const s=new Set();t.split(/[\n,;|]+/).forEach(l=>{(l.match(/\d+/g)||[]).forEach(m=>{const n=parseInt(m);if(n>0&&n<=65535)s.add(n)})});return[...s].sort((a,b)=>a-b)}
+function parsePorts(t){
+  if(!t.trim())return[];
+  const s=new Set();
+  const lines=t.split(/\n/);
+  const nmapPortRe=/^(\d{1,5})\/(tcp|udp)\s/;
+  const ignoreLine=/^(TRACEROUTE|HOP\s|OS\s|NSE:|Nmap done|Service detection|Aggressive OS|Host script results|Not shown|PORT\s+STATE|Device type|Running:|Network Distance|---|\|_|\|)/i;
+  let hasNmapFormat=false;
+  let inIgnoreBlock=false;
+  for(const line of lines){
+    const trimmed=line.trim();
+    if(!trimmed)continue;
+    if(/^TRACEROUTE/i.test(trimmed)){inIgnoreBlock=true;continue}
+    if(inIgnoreBlock){
+      if(/^\d+\/(tcp|udp)\s/.test(trimmed))inIgnoreBlock=false;
+      else continue;
+    }
+    if(ignoreLine.test(trimmed))continue;
+    const m=trimmed.match(nmapPortRe);
+    if(m){hasNmapFormat=true;const n=parseInt(m[1]);if(n>0&&n<=65535)s.add(n)}
+  }
+  if(!hasNmapFormat){
+    (t.match(/\b\d{1,5}\b/g)||[]).forEach(m=>{
+      const n=parseInt(m);if(n>0&&n<=65535)s.add(n)
+    })
+  }
+  return[...s].sort((a,b)=>a-b)
+}
+
+function usePersistedState(key,init){
+  const fullKey=`oscp-ap-${key}`;
+  const[val,setVal]=useState(()=>{
+    try{const s=localStorage.getItem(fullKey);return s!==null?JSON.parse(s):init}catch{return init}
+  });
+  useEffect(()=>{try{localStorage.setItem(fullKey,JSON.stringify(val))}catch{}},[val,fullKey]);
+  return[val,setVal]
+}
 
 function CopyBtn({text}){
   const[c,setC]=useState(false);
@@ -538,11 +596,11 @@ function identifyHash(h){
 }
 
 // ━━━ TAB: AD ATTACK CHAIN ━━━
-function ADTab({lhost}){
-  const[dUser,setDUser]=useState("");const[dPass,setDPass]=useState("");
-  const[domain,setDomain]=useState("");const[dcIP,setDCIP]=useState("");
+function ADTab({lhost,dUser,setDUser,dPass,setDPass,domain,setDomain,dcIP,setDCIP,foundCreds,setFoundCreds}){
   const[openPhase,setOpenPhase]=useState({0:true});
-  const[openSteps,setOpenSteps]=useState({});const[doneSteps,setDoneSteps]=useState({});
+  const[openSteps,setOpenSteps]=useState({});const[doneSteps,setDoneSteps]=usePersistedState('ad-done',{});
+  const[newCred,setNewCred]=useState({user:'',pass:'',source:''});
+  const addCred=()=>{if(newCred.user||newCred.pass){setFoundCreds(p=>[...p,{...newCred,id:Date.now()}]);setNewCred({user:'',pass:'',source:''})}};
   const tP=k=>setOpenPhase(p=>({...p,[k]:!p[k]}));
   const tS=k=>setOpenSteps(p=>({...p,[k]:!p[k]}));
   const tD=(k,e)=>{e.stopPropagation();setDoneSteps(p=>({...p,[k]:!p[k]}))};
@@ -557,6 +615,16 @@ function ADTab({lhost}){
       <input className="inp" style={{width:120}} placeholder="Password" value={dPass} onChange={e=>setDPass(e.target.value)}/>
       <input className="inp" style={{width:140}} placeholder="Domain (e.g. corp.local)" value={domain} onChange={e=>setDomain(e.target.value)}/>
       <input className="inp" style={{width:120}} placeholder="DC IP" value={dcIP} onChange={e=>setDCIP(e.target.value)}/>
+    </div>
+    {foundCreds.length>0&&<div className="card" style={{marginBottom:14}}>
+      <div className="card-h" style={{cursor:'default'}}><div style={{fontFamily:'var(--m)',fontWeight:700,fontSize:12,color:'var(--ac)'}}>🔑 Found Credentials ({foundCreds.length})</div></div>
+      <div style={{padding:'6px 14px'}}><table style={{width:'100%',fontSize:11,fontFamily:'var(--m)',borderCollapse:'collapse'}}><thead><tr style={{color:'var(--t2)',borderBottom:'1px solid var(--bd)'}}><th style={{textAlign:'left',padding:'4px 6px'}}>User</th><th style={{textAlign:'left',padding:'4px 6px'}}>Pass/Hash</th><th style={{textAlign:'left',padding:'4px 6px'}}>Source</th><th style={{padding:'4px 6px',width:30}}></th></tr></thead><tbody>{foundCreds.map(c=><tr key={c.id} style={{borderBottom:'1px solid var(--bd)'}}><td style={{padding:'4px 6px',color:'var(--cg)'}}>{c.user}</td><td style={{padding:'4px 6px',color:'var(--cg)'}}>{c.pass}</td><td style={{padding:'4px 6px',color:'var(--t2)'}}>{c.source}</td><td><button className="cp" style={{fontSize:8,padding:'1px 4px'}} onClick={()=>setFoundCreds(p=>p.filter(x=>x.id!==c.id))}>✕</button></td></tr>)}</tbody></table></div>
+    </div>}
+    <div style={{display:'flex',gap:4,marginBottom:14,alignItems:'flex-end'}}>
+      <input className="inp" style={{flex:1}} placeholder="Username" value={newCred.user} onChange={e=>setNewCred(p=>({...p,user:e.target.value}))}/>
+      <input className="inp" style={{flex:1}} placeholder="Password / Hash" value={newCred.pass} onChange={e=>setNewCred(p=>({...p,pass:e.target.value}))}/>
+      <input className="inp" style={{flex:1}} placeholder="Source (e.g. Kerberoast)" value={newCred.source} onChange={e=>setNewCred(p=>({...p,source:e.target.value}))}/>
+      <button className="cp" style={{padding:'6px 12px',background:'var(--acd)',borderColor:'var(--ac)',color:'var(--ac)'}} onClick={addCred}>+ Add Cred</button>
     </div>
     {AD_CHAIN.map((phase,pi)=>{
       const isOpen=openPhase[pi]!==false;
@@ -587,9 +655,11 @@ function ADTab({lhost}){
 }
 
 // ━━━ TAB: AUTOPILOT (Standalones) ━━━
-function AutopilotTab({targetIP}){
-  const[portsText,setPortsText]=useState("");
-  const[openS,setOpenS]=useState({});const[openP,setOpenP]=useState({});const[doneS,setDoneS]=useState({});
+function AutopilotTab({targetIP,foundCreds,setFoundCreds}){
+  const[portsText,setPortsText]=usePersistedState('sa-ports','');
+  const[openS,setOpenS]=useState({});const[openP,setOpenP]=useState({});const[doneS,setDoneS]=usePersistedState('sa-done',{});
+  const[newCred,setNewCred]=useState({user:'',pass:'',source:''});
+  const addCred=()=>{if(newCred.user||newCred.pass){setFoundCreds(p=>[...p,{...newCred,id:Date.now()}]);setNewCred({user:'',pass:'',source:''})}};
   const ports=useMemo(()=>parsePorts(portsText),[portsText]);
   const playbooks=useMemo(()=>{
     const known=ports.filter(p=>PORT_PLAYBOOKS[p]).map(p=>({port:p,...PORT_PLAYBOOKS[p]}));
@@ -605,6 +675,16 @@ function AutopilotTab({targetIP}){
       <div className="score-seg" style={{background:'var(--acd)',color:'var(--ac)'}}>Standalone 2 = 20 pts</div>
       <div className="score-seg" style={{background:'var(--acd)',color:'var(--ac)'}}>Standalone 3 = 20 pts</div>
     </div>
+    {foundCreds.length>0&&<div className="card" style={{marginBottom:10}}>
+      <div className="card-h" style={{cursor:'default',padding:'8px 14px'}}><div style={{fontFamily:'var(--m)',fontWeight:700,fontSize:11,color:'var(--ac)'}}>🔑 Found Credentials — try these on every service!</div></div>
+      <div style={{padding:'4px 14px 8px'}}>{foundCreds.map(c=><span key={c.id} style={{display:'inline-block',fontSize:10,fontFamily:'var(--m)',background:'var(--b0)',border:'1px solid var(--bd)',borderRadius:4,padding:'2px 8px',margin:'2px 3px',color:'var(--cg)'}}>{c.user}{c.pass?`:${c.pass}`:''}<span style={{color:'var(--t2)',marginLeft:4}}>({c.source||'?'})</span></span>)}</div>
+    </div>}
+    <div style={{display:'flex',gap:4,marginBottom:10,alignItems:'flex-end'}}>
+      <input className="inp" style={{flex:1}} placeholder="Username" value={newCred.user} onChange={e=>setNewCred(p=>({...p,user:e.target.value}))}/>
+      <input className="inp" style={{flex:1}} placeholder="Password / Hash" value={newCred.pass} onChange={e=>setNewCred(p=>({...p,pass:e.target.value}))}/>
+      <input className="inp" style={{flex:1}} placeholder="Source" value={newCred.source} onChange={e=>setNewCred(p=>({...p,source:e.target.value}))}/>
+      <button className="cp" style={{padding:'6px 12px',background:'var(--acd)',borderColor:'var(--ac)',color:'var(--ac)'}} onClick={addCred}>+ Add</button>
+    </div>
     <div className="port-in">
       <h3>Paste nmap results or port numbers</h3>
       <textarea value={portsText} onChange={e=>setPortsText(e.target.value)} placeholder={"22/tcp open ssh\n80/tcp open http\n445/tcp open microsoft-ds\n\nOr: 22, 80, 445"} spellCheck={false}/>
@@ -619,7 +699,18 @@ function AutopilotTab({targetIP}){
           </div>
           <span className={`pri ${pb.priority}`}>{pb.priority}</span>
         </div>
-        {isO&&<div className="steps-wrap">{pb.steps.map((step,i)=>{
+        {isO&&<div className="steps-wrap">
+          {foundCreds.length>0&&CRED_COMMANDS[pb.port]&&<div style={{borderBottom:'1px solid var(--bd)',padding:'8px 14px',background:'rgba(249,115,22,0.04)'}}>
+            <div style={{fontSize:10,fontWeight:700,color:'var(--ac)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.5px'}}>🔑 Try with found creds</div>
+            {foundCreds.map(c=>{const credCmd=CRED_COMMANDS[pb.port](targetIP||"TARGET",c.user||"USER",c.pass||"PASS");return(<div key={c.id} style={{marginBottom:6}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+                <span style={{fontSize:10,fontFamily:'var(--m)',color:'var(--t1)'}}>{c.user}{c.pass?`:${c.pass}`:''} <span style={{color:'var(--t2)'}}>({c.source||'?'})</span></span>
+                <CopyBtn text={credCmd}/>
+              </div>
+              <div className="cmd" style={{fontSize:10,background:'var(--b0)',padding:6,borderRadius:3}}>{credCmd}</div>
+            </div>)})}
+          </div>}
+          {pb.steps.map((step,i)=>{
           const k=`${pb.port}-${i}`;const exp=openS[k];const done=doneS[k];
           const cmd=step.cmd(targetIP||"TARGET");
           return(<div className="step" key={i}>
@@ -1005,7 +1096,7 @@ function TimerTab(){
 
 // ━━━ TAB: CHECKLIST ━━━
 function ChecklistTab(){
-  const[chk,setChk]=useState({});
+  const[chk,setChk]=usePersistedState('checklist',{});
   const toggle=k=>setChk(p=>({...p,[k]:!p[k]}));
   const total=Object.values(CHECKLIST).flat().length;
   const done=Object.values(chk).filter(Boolean).length;
@@ -1030,7 +1121,7 @@ function ChecklistTab(){
 
 // ━━━ TAB: NOTES ━━━
 function NotesTab(){
-  const[notes,setNotes]=useState(`# OSCP+ Exam Report Notes
+  const[notes,setNotes]=usePersistedState('notes',`# OSCP+ Exam Report Notes
 ## Machine 1 (AD Set — 40pts)
 ### Domain: 
 ### DC IP: 
@@ -1535,10 +1626,15 @@ const TABS=[
 ];
 
 function App(){
-  const[tab,setTab]=useState("recon");
-  const[targetIP,setTargetIP]=useState("");
-  const[lhost,setLhost]=useState("");
-  const[lport,setLport]=useState("4444");
+  const[tab,setTab]=usePersistedState('tab','recon');
+  const[targetIP,setTargetIP]=usePersistedState('targetIP','');
+  const[lhost,setLhost]=usePersistedState('lhost','');
+  const[lport,setLport]=usePersistedState('lport','4444');
+  const[dUser,setDUser]=usePersistedState('dUser','');
+  const[dPass,setDPass]=usePersistedState('dPass','');
+  const[domain,setDomain]=usePersistedState('domain','');
+  const[dcIP,setDCIP]=usePersistedState('dcIP','');
+  const[foundCreds,setFoundCreds]=usePersistedState('foundCreds',[]);
 
   return(<>
     <style>{CSS}</style>
@@ -1554,8 +1650,8 @@ function App(){
       <div className="tabs">{TABS.map(t=><button key={t.id} className={`tab ${tab===t.id?'on':''}`} onClick={()=>setTab(t.id)}>{t.icon} {t.label}</button>)}</div>
       <div className="main">
         {tab==="recon"&&<ReconTab targetIP={targetIP}/>}
-        {tab==="ad"&&<ADTab lhost={lhost}/>}
-        {tab==="auto"&&<AutopilotTab targetIP={targetIP}/>}
+        {tab==="ad"&&<ADTab lhost={lhost} dUser={dUser} setDUser={setDUser} dPass={dPass} setDPass={setDPass} domain={domain} setDomain={setDomain} dcIP={dcIP} setDCIP={setDCIP} foundCreds={foundCreds} setFoundCreds={setFoundCreds}/>}
+        {tab==="auto"&&<AutopilotTab targetIP={targetIP} foundCreds={foundCreds} setFoundCreds={setFoundCreds}/>}
         {tab==="privesc"&&<PrivEscTab lhost={lhost}/>}
         {tab==="tunnel"&&<TunnelingTab lhost={lhost}/>}
         {tab==="shells"&&<ShellTab lhost={lhost} lport={lport}/>}
