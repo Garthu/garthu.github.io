@@ -543,6 +543,10 @@ const CSS = `
 .empty-title{font-size:14px;font-weight:600;color:var(--t1);margin-bottom:4px}
 .score-bar{display:flex;gap:4px;margin-bottom:14px}
 .score-seg{flex:1;padding:6px 8px;border-radius:4px;font-size:10px;font-weight:600;text-align:center;cursor:default}
+.reset-btn{padding:5px 12px;font-size:10px;font-weight:600;border-radius:4px;border:1px solid var(--r);background:var(--rd);color:var(--r);cursor:pointer;font-family:var(--s);transition:all .15s;white-space:nowrap}
+.reset-btn:hover{background:var(--r);color:#fff}
+.clear-btn{padding:2px 8px;font-size:9px;font-weight:600;border-radius:3px;border:1px solid var(--bd);background:var(--b3);color:var(--t2);cursor:pointer;font-family:var(--m);transition:all .15s}
+.clear-btn:hover{border-color:var(--r);color:var(--r);background:var(--rd)}
 `;
 
 // ━━━ UTILITY FUNCTIONS ━━━
@@ -617,7 +621,7 @@ function ADTab({lhost,dUser,setDUser,dPass,setDPass,domain,setDomain,dcIP,setDCI
       <input className="inp" style={{width:120}} placeholder="DC IP" value={dcIP} onChange={e=>setDCIP(e.target.value)}/>
     </div>
     {foundCreds.length>0&&<div className="card" style={{marginBottom:14}}>
-      <div className="card-h" style={{cursor:'default'}}><div style={{fontFamily:'var(--m)',fontWeight:700,fontSize:12,color:'var(--ac)'}}>🔑 Found Credentials ({foundCreds.length})</div></div>
+      <div className="card-h" style={{cursor:'default'}}><div style={{fontFamily:'var(--m)',fontWeight:700,fontSize:12,color:'var(--ac)'}}>🔑 Found Credentials ({foundCreds.length})</div><button className="clear-btn" onClick={()=>{if(confirm('Clear all credentials?'))setFoundCreds([])}}>🗑️ Clear All</button></div>
       <div style={{padding:'6px 14px'}}><table style={{width:'100%',fontSize:11,fontFamily:'var(--m)',borderCollapse:'collapse'}}><thead><tr style={{color:'var(--t2)',borderBottom:'1px solid var(--bd)'}}><th style={{textAlign:'left',padding:'4px 6px'}}>User</th><th style={{textAlign:'left',padding:'4px 6px'}}>Pass/Hash</th><th style={{textAlign:'left',padding:'4px 6px'}}>Source</th><th style={{padding:'4px 6px',width:30}}></th></tr></thead><tbody>{foundCreds.map(c=><tr key={c.id} style={{borderBottom:'1px solid var(--bd)'}}><td style={{padding:'4px 6px',color:'var(--cg)'}}>{c.user}</td><td style={{padding:'4px 6px',color:'var(--cg)'}}>{c.pass}</td><td style={{padding:'4px 6px',color:'var(--t2)'}}>{c.source}</td><td><button className="cp" style={{fontSize:8,padding:'1px 4px'}} onClick={()=>setFoundCreds(p=>p.filter(x=>x.id!==c.id))}>✕</button></td></tr>)}</tbody></table></div>
     </div>}
     <div style={{display:'flex',gap:4,marginBottom:14,alignItems:'flex-end'}}>
@@ -676,7 +680,7 @@ function AutopilotTab({targetIP,foundCreds,setFoundCreds}){
       <div className="score-seg" style={{background:'var(--acd)',color:'var(--ac)'}}>Standalone 3 = 20 pts</div>
     </div>
     {foundCreds.length>0&&<div className="card" style={{marginBottom:10}}>
-      <div className="card-h" style={{cursor:'default',padding:'8px 14px'}}><div style={{fontFamily:'var(--m)',fontWeight:700,fontSize:11,color:'var(--ac)'}}>🔑 Found Credentials — try these on every service!</div></div>
+      <div className="card-h" style={{cursor:'default',padding:'8px 14px'}}><div style={{fontFamily:'var(--m)',fontWeight:700,fontSize:11,color:'var(--ac)'}}>🔑 Found Credentials — try these on every service!</div><button className="clear-btn" onClick={()=>{if(confirm('Clear all credentials?'))setFoundCreds([])}}>🗑️ Clear All</button></div>
       <div style={{padding:'4px 14px 8px'}}>{foundCreds.map(c=><span key={c.id} style={{display:'inline-block',fontSize:10,fontFamily:'var(--m)',background:'var(--b0)',border:'1px solid var(--bd)',borderRadius:4,padding:'2px 8px',margin:'2px 3px',color:'var(--cg)'}}>{c.user}{c.pass?`:${c.pass}`:''}<span style={{color:'var(--t2)',marginLeft:4}}>({c.source||'?'})</span></span>)}</div>
     </div>}
     <div style={{display:'flex',gap:4,marginBottom:10,alignItems:'flex-end'}}>
@@ -1635,6 +1639,12 @@ function App(){
   const[domain,setDomain]=usePersistedState('domain','');
   const[dcIP,setDCIP]=usePersistedState('dcIP','');
   const[foundCreds,setFoundCreds]=usePersistedState('foundCreds',[]);
+  const resetEnvironment=useCallback(()=>{
+    if(!confirm('⚠️ RESET ENVIRONMENT?\n\nThis will clear ALL data:\n• Target IP, LHOST, LPORT\n• Domain creds (user, pass, domain, DC IP)\n• All found credentials\n• Nmap/port data\n• Checklist progress\n• Notes\n• Timer\n\nThis cannot be undone!'))return;
+    const keys=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('oscp-ap-'))keys.push(k)}
+    keys.forEach(k=>localStorage.removeItem(k));
+    window.location.reload();
+  },[]);
 
   return(<>
     <style>{CSS}</style>
@@ -1645,6 +1655,7 @@ function App(){
           <input className="inp" style={{width:130}} placeholder="Target IP" value={targetIP} onChange={e=>setTargetIP(e.target.value)}/>
           <input className="inp" style={{width:130}} placeholder="Your IP (LHOST)" value={lhost} onChange={e=>setLhost(e.target.value)}/>
           <input className="inp" style={{width:65}} placeholder="LPORT" value={lport} onChange={e=>setLport(e.target.value)}/>
+          <button className="reset-btn" onClick={resetEnvironment}>🔄 Reset Env</button>
         </div>
       </div>
       <div className="tabs">{TABS.map(t=><button key={t.id} className={`tab ${tab===t.id?'on':''}`} onClick={()=>setTab(t.id)}>{t.icon} {t.label}</button>)}</div>

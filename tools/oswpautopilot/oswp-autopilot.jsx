@@ -285,7 +285,84 @@ const CSS=`
 .stuck-card{background:var(--b2);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;margin-bottom:8px}
 .stuck-q{font-size:13px;font-weight:700;color:var(--t0);margin-bottom:4px}
 .stuck-tip{font-size:11px;color:var(--t2);margin-bottom:6px}
+.net-card{background:var(--b2);border:1px solid var(--bd);border-radius:8px;margin-bottom:12px;overflow:hidden}
+.net-card-h{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;transition:background .1s}
+.net-card-h:hover{background:var(--b3)}
+.net-tag{font-size:9px;padding:2px 8px;border-radius:8px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.net-tag.wep{background:rgba(239,68,68,.1);color:var(--r)}
+.net-tag.wpa{background:var(--acd);color:var(--ac)}
+.net-tag.enterprise{background:rgba(139,92,246,.1);color:#8b5cf6}
+.net-tag.rogue{background:rgba(234,179,8,.1);color:var(--y)}
+.net-tag.wps{background:rgba(34,197,94,.08);color:var(--g)}
+.net-tag.unknown{background:rgba(107,114,128,.12);color:var(--t2)}
+.net-add{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end}
+.net-select{background:var(--b0);border:1px solid var(--bd);border-radius:4px;padding:5px 7px;color:var(--t0);font-size:10px;font-family:var(--m);outline:none;width:120px;transition:border .2s;appearance:auto}
+.net-select:focus{border-color:var(--ac)}
+.next-step{border-left:3px solid var(--ac);background:rgba(6,182,212,.04)}
+.next-badge{font-size:8px;padding:1px 6px;border-radius:4px;background:var(--ac);color:#fff;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-left:6px}
+.net-progress{display:flex;gap:8px;align-items:center;font-size:10px;color:var(--t2)}
+.net-progress-bar{flex:1;height:3px;background:var(--b0);border-radius:2px;overflow:hidden}
+.net-progress-fill{height:100%;border-radius:2px;transition:width .3s}
+.parse-box{background:var(--b2);border:1px solid var(--bd);border-radius:8px;padding:14px;margin-bottom:14px}
+.parse-box h3{color:var(--ac);font-size:12px;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px}
+.parse-box textarea{width:100%;background:var(--b0);border:1px solid var(--bd);border-radius:5px;padding:8px 10px;color:var(--cg);font-family:var(--m);font-size:10px;min-height:70px;resize:vertical;outline:none}
+.parse-box textarea:focus{border-color:var(--ac)}
+.parse-box p{font-size:10px;color:var(--t2);margin-top:5px}
+.parse-results{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.parse-chip{background:var(--b0);border:1px solid var(--bd);border-radius:4px;padding:4px 10px;font-size:10px;font-family:var(--m);color:var(--cg);cursor:pointer;transition:all .15s}
+.parse-chip:hover{border-color:var(--ac);color:var(--ac)}
+.del-btn{background:none;border:1px solid var(--bd);border-radius:3px;padding:1px 6px;font-size:9px;color:var(--t2);cursor:pointer;font-family:var(--m);transition:all .15s}
+.del-btn:hover{border-color:var(--r);color:var(--r);background:var(--rd)}
 `;
+
+// ━━━ UTILITIES ━━━
+function usePersistedState(key,init){
+  const fullKey=`oswp-ap-${key}`;
+  const[val,setVal]=useState(()=>{
+    try{const s=localStorage.getItem(fullKey);return s!==null?JSON.parse(s):init}catch{return init}
+  });
+  useEffect(()=>{try{localStorage.setItem(fullKey,JSON.stringify(val))}catch{}},[val,fullKey]);
+  return[val,setVal]
+}
+
+const ENC_TYPES=['WEP','WPA-PSK','WPA-Enterprise','Open/Rogue AP','WPS','Unknown'];
+const ENC_CHAINS={'WEP':[...SETUP_CHAIN,...WEP_CHAIN],'WPA-PSK':[...SETUP_CHAIN,...WPA_CHAIN],'WPA-Enterprise':[...SETUP_CHAIN,...ENTERPRISE_CHAIN],'Open/Rogue AP':[...SETUP_CHAIN,...ROGUE_CHAIN],'WPS':[...SETUP_CHAIN,...WPS_CHAIN],'Unknown':SETUP_CHAIN};
+const ENC_CSS={'WEP':'wep','WPA-PSK':'wpa','WPA-Enterprise':'enterprise','Open/Rogue AP':'rogue','WPS':'wps','Unknown':'unknown'};
+
+function parseAirodump(text){
+  if(!text.trim())return[];
+  const nets=[];
+  const lines=text.split(/\n/);
+  for(const line of lines){
+    const t=line.trim();
+    if(!t||t.startsWith('BSSID')||t.startsWith('Station'))continue;
+    // CSV format: BSSID, First time, Last time, channel, Speed, Privacy, Cipher, Auth, Power, # beacons, # IV, LAN IP, ID-length, ESSID, Key
+    const m=t.match(/^([0-9A-Fa-f:]{17})\s*,.*?,.*?,\s*(\d+)\s*,.*?,\s*(\S+?)\s*,\s*(\S*?)\s*,\s*(\S*?)\s*,.*?,.*?,.*?,.*?,.*?,\s*(.*)/);
+    if(m){
+      const[,bssid,ch,enc,cipher,auth,essid]=m;
+      let type='Unknown';
+      const e=enc.toUpperCase(),a=(auth||'').toUpperCase();
+      if(e.includes('WEP'))type='WEP';
+      else if(e.includes('WPA')&&a.includes('MGT'))type='WPA-Enterprise';
+      else if(e.includes('WPA'))type='WPA-PSK';
+      else if(e==='OPN')type='Open/Rogue AP';
+      nets.push({bssid:bssid.trim(),essid:(essid||'').trim(),ch:ch.trim(),enc:type,id:Date.now()+Math.random()});
+    }
+    // Also try space-separated airodump output
+    const m2=t.match(/^([0-9A-Fa-f:]{17})\s+[\-\d]+\s+[\-\d]+\s+[\-\d]+\s+(\d+)\s+\d+\s+(\S+)\s+(\S+)\s+(\S+)\s+.+?\s{2,}(.+)$/);
+    if(!m&&m2){
+      const[,bssid,ch,enc,cipher,auth,essid]=m2;
+      let type='Unknown';
+      const e=enc.toUpperCase(),a=(auth||'').toUpperCase();
+      if(e.includes('WEP'))type='WEP';
+      else if(e.includes('WPA')&&a.includes('MGT'))type='WPA-Enterprise';
+      else if(e.includes('WPA'))type='WPA-PSK';
+      else if(e==='OPN')type='Open/Rogue AP';
+      nets.push({bssid:bssid.trim(),essid:(essid||'').trim(),ch:ch.trim(),enc:type,id:Date.now()+Math.random()});
+    }
+  }
+  return nets;
+}
 
 // ━━━ COMPONENTS ━━━
 function CopyBtn({text}){
@@ -322,7 +399,130 @@ function PhaseList({phases,vals}){
   })}</div>)
 }
 
-// ━━━ TABS ━━━
+// ━━━ TAB: AUTOPILOT ━━━
+function AutopilotTab({vals}){
+  const[networks,setNetworks]=usePersistedState('networks',[]);
+  const[doneSteps,setDoneSteps]=usePersistedState('ap-done',{});
+  const[openNets,setOpenNets]=useState(()=>{const o={};networks.forEach(n=>{o[n.id]=true});return o});
+  const[openSteps,setOpenSteps]=useState({});
+  const[parseText,setParseText]=useState('');
+  const[newNet,setNewNet]=useState({essid:'',bssid:'',ch:'',enc:'WEP'});
+
+  const addNet=(net)=>{
+    const n={...net,id:Date.now()+Math.random()};
+    setNetworks(p=>[...p,n]);
+    setOpenNets(p=>({...p,[n.id]:true}));
+  };
+  const removeNet=(id)=>{if(confirm('Remove this network?')){setNetworks(p=>p.filter(n=>n.id!==id));setDoneSteps(p=>{const c={...p};Object.keys(c).forEach(k=>{if(k.startsWith(`${id}-`))delete c[k]});return c})}};
+  const parsed=parseAirodump(parseText);
+
+  const addParsed=(pn)=>{addNet({essid:pn.essid,bssid:pn.bssid,ch:pn.ch,enc:pn.enc})};
+  const addAll=()=>{parsed.forEach(pn=>addNet({essid:pn.essid,bssid:pn.bssid,ch:pn.ch,enc:pn.enc}));setParseText('')};
+
+  return(<div>
+    <div className="score-bar">
+      <div className="score-seg" style={{background:'var(--acd)',color:'var(--ac)'}}>3 Network Scenarios</div>
+      <div className="score-seg" style={{background:'var(--gd)',color:'var(--g)'}}>Must crack 2 of 3 (1 mandatory)</div>
+      <div className="score-seg" style={{background:'rgba(234,179,8,.1)',color:'var(--y)'}}>3h45m exam + 24h report</div>
+    </div>
+
+    {/* Parse airodump output */}
+    <div className="parse-box">
+      <h3>📡 Paste airodump-ng output (CSV or terminal)</h3>
+      <textarea value={parseText} onChange={e=>setParseText(e.target.value)} placeholder={`BSSID, First time, Last time, channel, Speed, Privacy, Cipher, Auth, Power, # beacons, # IV, LAN IP, ID-length, ESSID, Key\nAA:BB:CC:DD:EE:FF, 2026-03-17 10:00, 2026-03-17 10:05, 6, 54, WPA2, CCMP, PSK, -42, 100, 0, 0.0.0.0, 10, MyNetwork,`} spellCheck={false}/>
+      {parsed.length>0&&<div>
+        <p>✅ Detected {parsed.length} network(s) — click to add:</p>
+        <div className="parse-results">
+          {parsed.map((pn,i)=><button key={i} className="parse-chip" onClick={()=>addParsed(pn)}>
+            + {pn.essid||pn.bssid} <span style={{color:'var(--t2)',marginLeft:4}}>({pn.enc}, ch{pn.ch})</span>
+          </button>)}
+          {parsed.length>1&&<button className="parse-chip" style={{borderColor:'var(--ac)',color:'var(--ac)'}} onClick={addAll}>+ Add All</button>}
+        </div>
+      </div>}
+      {parseText&&parsed.length===0&&<p style={{color:'var(--y)'}}>⚠ Could not parse networks. Try CSV format or add manually below.</p>}
+    </div>
+
+    {/* Manual add */}
+    <div className="net-add">
+      <input className="inp" placeholder="ESSID" value={newNet.essid} onChange={e=>setNewNet(p=>({...p,essid:e.target.value}))} style={{flex:1,minWidth:100}}/>
+      <input className="inp" placeholder="BSSID" value={newNet.bssid} onChange={e=>setNewNet(p=>({...p,bssid:e.target.value}))} style={{width:140}}/>
+      <input className="inp" placeholder="Channel" value={newNet.ch} onChange={e=>setNewNet(p=>({...p,ch:e.target.value}))} style={{width:60}}/>
+      <select className="net-select" value={newNet.enc} onChange={e=>setNewNet(p=>({...p,enc:e.target.value}))}>
+        {ENC_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+      </select>
+      <button className="cp" style={{padding:'6px 12px',background:'var(--acd)',borderColor:'var(--ac)',color:'var(--ac)'}} onClick={()=>{if(newNet.essid||newNet.bssid){addNet(newNet);setNewNet({essid:'',bssid:'',ch:'',enc:'WEP'})}}}>+ Add Network</button>
+    </div>
+
+    {/* Network cards */}
+    {networks.map(net=>{
+      const chain=ENC_CHAINS[net.enc]||SETUP_CHAIN;
+      const allStepKeys=chain.flatMap((phase,pi)=>phase.steps.map((_,si)=>`${net.id}-${pi}-${si}`));
+      const doneCount=allStepKeys.filter(k=>doneSteps[k]).length;
+      const totalSteps=allStepKeys.length;
+      const pct=totalSteps>0?Math.round(doneCount/totalSteps*100):0;
+      const isOpen=openNets[net.id]!==false;
+      // Find next step index
+      let nextKey=null;
+      for(const k of allStepKeys){if(!doneSteps[k]){nextKey=k;break}}
+      // Merge vals with per-network info
+      const netVals={...vals,bssid:net.bssid||vals.bssid,essid:net.essid||vals.essid,ch:net.ch||vals.ch};
+
+      return(<div className="net-card" key={net.id}>
+        <div className="net-card-h" onClick={()=>setOpenNets(p=>({...p,[net.id]:!p[net.id]}))}>
+          <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
+            <span className={`arrow ${isOpen?'open':''}`}>▶</span>
+            <span className={`net-tag ${ENC_CSS[net.enc]||'unknown'}`}>{net.enc}</span>
+            <span style={{fontFamily:'var(--m)',fontWeight:700,fontSize:13,color:'var(--t0)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{net.essid||net.bssid||'Unknown'}</span>
+            {net.ch&&<span style={{fontSize:10,color:'var(--t2)'}}>ch{net.ch}</span>}
+          </div>
+          <div className="net-progress">
+            <span>{doneCount}/{totalSteps}</span>
+            <div className="net-progress-bar"><div className="net-progress-fill" style={{width:`${pct}%`,background:pct>=100?'var(--g)':pct>=50?'var(--y)':'var(--ac)'}}/></div>
+            {pct>=100&&<span style={{color:'var(--g)',fontWeight:700}}>✓</span>}
+            <button className="del-btn" onClick={e=>{e.stopPropagation();removeNet(net.id)}}>✕</button>
+          </div>
+        </div>
+        {isOpen&&<div style={{borderTop:'1px solid var(--bd)'}}>
+          {net.bssid&&<div style={{padding:'4px 14px',fontSize:10,fontFamily:'var(--m)',color:'var(--t2)',borderBottom:'1px solid var(--bd)'}}>BSSID: {net.bssid}{net.ch?` • CH: ${net.ch}`:''}{net.essid?` • ESSID: ${net.essid}`:''}</div>}
+          {chain.map((phase,pi)=>{
+            const phaseOpen=openSteps[`${net.id}-p-${pi}`]!==false;
+            const phaseDone=phase.steps.every((_,si)=>doneSteps[`${net.id}-${pi}-${si}`]);
+            return(<div key={pi} style={{borderBottom:'1px solid var(--bd)'}}>
+              <div className="phase-h" onClick={()=>setOpenSteps(p=>({...p,[`${net.id}-p-${pi}`]:!p[`${net.id}-p-${pi}`]}))} style={{padding:'8px 14px'}}>
+                <div className={`phase-num ${phaseDone?'done':''}`} style={{width:22,height:22,fontSize:9}}>{phaseDone?'✓':pi+1}</div>
+                <div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:'var(--t0)'}}>{phase.phase}</div><div style={{fontSize:10,color:'var(--t2)'}}>{phase.desc}</div></div>
+                <span className={`arrow ${phaseOpen?'open':''}`}>▶</span>
+              </div>
+              {phaseOpen&&<div className="steps-wrap">{phase.steps.map((step,si)=>{
+                const k=`${net.id}-${pi}-${si}`;
+                const isExp=openSteps[k];
+                const isDone=doneSteps[k];
+                const isNext=k===nextKey;
+                const cmdText=step.cmd(netVals);
+                return(<div className={`step ${isNext?'next-step':''}`} key={si}>
+                  <div className="step-row" onClick={()=>setOpenSteps(p=>({...p,[k]:!p[k]}))}>
+                    <div className={`snum ${isDone?'done':step.critical?'crit':''}`} onClick={e=>{e.stopPropagation();setDoneSteps(p=>({...p,[k]:!p[k]}))}}>{isDone?'✓':si+1}</div>
+                    <div style={{flex:1}}><div className="s-act">{step.action}{isNext&&<span className="next-badge">next</span>}</div><div className="s-chk">→ {step.check}</div></div>
+                    <CopyBtn text={cmdText}/>
+                  </div>
+                  {(isExp||isNext)&&<div className="s-exp"><div className="cmd">{cmdText}</div></div>}
+                </div>)
+              })}</div>}
+            </div>)
+          })}
+        </div>}
+      </div>)
+    })}
+
+    {networks.length===0&&<div style={{textAlign:'center',padding:'40px 16px',color:'var(--t2)'}}>
+      <div style={{fontSize:40,marginBottom:10}}>📡</div>
+      <div style={{fontSize:14,fontWeight:600,color:'var(--t1)',marginBottom:4}}>Add your exam networks</div>
+      <div>Paste airodump-ng output above or add networks manually. Each network gets a step-by-step attack chain.</div>
+    </div>}
+  </div>)
+}
+
+// ━━━ TAB: DECISION ENGINE ━━━
 function DecisionTab({vals}){
   const[mode,setMode]=useState(null);
   const chains={setup:SETUP_CHAIN,wep:WEP_CHAIN,wpa:WPA_CHAIN,rogue:ROGUE_CHAIN,enterprise:ENTERPRISE_CHAIN,wps:WPS_CHAIN,extra:EXTRA_CHAIN};
@@ -468,7 +668,7 @@ function NotesTab(){
 }
 
 // ━━━ MAIN APP ━━━
-const TABS=["🎯 Decision Engine","⚡ Quick Ref","🆘 I'm Stuck","✅ Checklist","⏱ Timer","🔧 Troubleshoot","📝 Notes"];
+const TABS=["🚀 Autopilot","🎯 Decision Engine","⚡ Quick Ref","🆘 I'm Stuck","✅ Checklist","⏱ Timer","🔧 Troubleshoot","📝 Notes"];
 
 function App(){
   const[tab,setTab]=useState(0);
@@ -496,13 +696,14 @@ function App(){
       </div>
       <div className="tabs">{TABS.map((t,i)=><button key={i} className={`tab ${tab===i?'on':''}`} onClick={()=>setTab(i)}>{t}</button>)}</div>
       <div className="main">
-        {tab===0&&<DecisionTab vals={vals}/>}
-        {tab===1&&<QuickRefTab/>}
-        {tab===2&&<StuckTab/>}
-        {tab===3&&<ChecklistTab/>}
-        {tab===4&&<TimerTab/>}
-        {tab===5&&<TroubleshootTab/>}
-        {tab===6&&<NotesTab/>}
+        {tab===0&&<AutopilotTab vals={vals}/>}
+        {tab===1&&<DecisionTab vals={vals}/>}
+        {tab===2&&<QuickRefTab/>}
+        {tab===3&&<StuckTab/>}
+        {tab===4&&<ChecklistTab/>}
+        {tab===5&&<TimerTab/>}
+        {tab===6&&<TroubleshootTab/>}
+        {tab===7&&<NotesTab/>}
       </div>
     </div>
   </>)
